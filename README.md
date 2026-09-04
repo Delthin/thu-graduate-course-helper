@@ -4,6 +4,8 @@
 
 > 仅匹配 `https://zhjwxk.cic.tsinghua.edu.cn/` 下的研究生选课页面；不会把课程或个人信息发送到第三方服务器。
 
+**[安装 / 更新脚本](https://raw.githubusercontent.com/Delthin/thu-graduate-course-helper/main/thu-graduate-course-helper.user.js)** · 当前版本 `0.4.3` · 支持 Edge / Chrome + Tampermonkey
+
 ## 界面与操作图示
 
 ![功能总览](./docs/assets/feature-overview.png)
@@ -45,15 +47,11 @@
 4. 将 [`thu-graduate-course-helper.user.js`](./thu-graduate-course-helper.user.js) 的全部内容粘贴进去。
 5. 按 `Ctrl+S` 保存。
 
-#### 从 GitHub 安装
+#### 从 GitHub 安装（推荐）
 
-仓库发布到 GitHub 后，打开脚本文件的 Raw 地址，Tampermonkey 通常会自动显示安装页面：
+点击 **[安装 / 更新脚本](https://raw.githubusercontent.com/Delthin/thu-graduate-course-helper/main/thu-graduate-course-helper.user.js)**，Tampermonkey 会打开安装页面，确认覆盖安装即可。
 
-```text
-https://raw.githubusercontent.com/Delthin/thu-graduate-course-helper/main/thu-graduate-course-helper.user.js
-```
-
-以后再次打开该 Raw 地址即可覆盖更新；脚本的 `@name` 和 `@namespace` 保持不变，不会重复安装成多个脚本。
+以后再次打开同一链接即可更新；脚本的 `@name` 和 `@namespace` 保持不变，不会重复安装成多个脚本。
 
 ## 使用流程
 
@@ -154,10 +152,10 @@ npm test
 
 测试包括：
 
-- 课程时间解析。
-- 原选课表单与课程表勾选/志愿同步。
-- 嵌套、分离表头的报名统计解析。
-- 第一、第二、第三志愿及优先人数解析。
+- 课程时间、单双周和前后八周冲突解析。
+- 已选课程识别、冲突置灰及原表单勾选/志愿同步。
+- 嵌套表头、后续分页和一二三志愿人数解析。
+- 提交刷新后的已选状态、人数与筛选缓存。
 - 登录保活 URL 与过期文本识别。
 
 ## 文件结构
@@ -165,7 +163,8 @@ npm test
 ```text
 thu-graduate-course-helper.user.js  # 油猴脚本
 test.cjs                            # 最小单元测试
-package.json                        # 测试命令与开发依赖
+package.json / package-lock.json    # 测试命令与开发依赖
+docs/assets/                        # README 功能与操作图示
 README.md                           # 安装和使用说明
 LICENSE                             # MIT License
 ```
