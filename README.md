@@ -4,6 +4,12 @@
 
 > 仅匹配 `https://zhjwxk.cic.tsinghua.edu.cn/` 下的研究生选课页面；不会把课程或个人信息发送到第三方服务器。
 
+## 界面与操作图示
+
+![功能总览](./docs/assets/feature-overview.png)
+
+![操作流程](./docs/assets/operation-flow.png)
+
 ## 功能
 
 - 将可选课程整理成星期一至星期五、每天六个大节的课程表。
@@ -165,6 +171,17 @@ LICENSE                             # MIT License
 ## 免责声明
 
 本项目是非官方辅助工具。选课结果、容量、报名人数和志愿规则均以清华大学教务系统实际显示及学校通知为准。提交前请自行核对课程、课序、志愿和时间冲突。
+
+## 宣传素材
+
+`promo/xhs/` 中包含 6 张可直接用于小红书轮播的 1080×1440 宣传图；`promo/xiaohongshu-demo.mp4` 是 15.5 秒无声竖版演示视频，发布文案位于 `promo/xiaohongshu-copy.md`。
+
+重新生成素材：
+
+```powershell
+python scripts/build_assets.py
+powershell -ExecutionPolicy Bypass -File scripts/build_video.ps1
+```
 
 ## License
 
