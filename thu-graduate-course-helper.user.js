@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         清华研究生选课报名人数
 // @namespace    local.tsinghua.course-count
-// @version      0.4.1
+// @version      0.4.2
 // @description  用可视化课程表选择培养计划课程、设置志愿、显示报名人数并维持登录态
 // @match        https://zhjwxk.cic.tsinghua.edu.cn/xkYjs.vxkYjsXkbBs.do*
 // @noframes
@@ -17,6 +17,7 @@
   const REFRESH_MS = 15 * 60 * 1000;
   const KEEPALIVE_MS = 3 * 60 * 1000;
   const STATS_PATH = '/xkYjs.vxkYjsXkbBs.do?m=xkqkSearch&p_xnxq=';
+  const TIMETABLE_OPEN_KEY = 'thu-course-helper-timetable-open';
   const DAYS = ['星期一', '星期二', '星期三', '星期四', '星期五'];
   const SLOTS = [
     ['第1大节', '08:00–09:35'], ['第2大节', '09:50–12:15'],
@@ -36,6 +37,21 @@
     timetableOpen: false,
     countStatus: '准备中…',
   };
+  try {
+    state.timetableOpen = sessionStorage.getItem(TIMETABLE_OPEN_KEY) === '1';
+  } catch (_) {
+    // 无存储权限时仍可在当前页面使用。
+  }
+
+  function rememberTimetableOpen(open) {
+    state.timetableOpen = open;
+    try {
+      if (open) sessionStorage.setItem(TIMETABLE_OPEN_KEY, '1');
+      else sessionStorage.removeItem(TIMETABLE_OPEN_KEY);
+    } catch (_) {
+      // 无存储权限时仅保留内存状态。
+    }
+  }
 
   const clean = value => String(value ?? '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -57,6 +73,15 @@
 
   function findSelectionDoc() {
     return allDocs(window).find(doc => doc.querySelector('#p_kch')) || null;
+  }
+
+  function findEnrolledDoc() {
+    return allDocs(window).find(doc => {
+      const url = doc.location?.href || '';
+      const text = clean(doc.body?.textContent || '');
+      return /[?&]m=yxSearchTab(?:&|$)/.test(url)
+        || (text.includes('您共选择了') && text.includes('课程号') && text.includes('课序号'));
+    }) || null;
   }
 
   function getTerm(doc) {
@@ -148,11 +173,50 @@
         teacher: texts[codeIndex + 8] || '',
         note,
         selected: Boolean(checkbox?.checked),
+        enrolled: false,
         unavailable: !checkbox || checkbox.disabled || clean(row.textContent).includes('不可选'),
         remote: /限[:：]?深圳|深圳学生|国际研究生院/.test(note),
       });
     }
     return courses;
+  }
+
+  function extractEnrolledRows(doc) {
+    if (!doc) return [];
+    const courses = [];
+    for (const row of doc.querySelectorAll('tr')) {
+      const texts = [...row.cells].map(cell => clean(cell.textContent));
+      const codeIndex = texts.findIndex(text => /^\d{8}$/.test(text));
+      const section = texts[codeIndex + 1] || '';
+      if (codeIndex < 0 || !/^\d+$/.test(section)) continue;
+      courses.push({
+        row,
+        checkbox: null,
+        wishSelect: null,
+        wishLabel: texts[codeIndex - 1] || '',
+        code: texts[codeIndex],
+        section,
+        key: `${texts[codeIndex]}-${section}`,
+        name: texts[codeIndex + 2] || '',
+        remaining: Number.NaN,
+        schedule: texts[codeIndex + 4] || '',
+        capacity: Number.NaN,
+        credits: texts[codeIndex + 3] || '',
+        teacher: texts[codeIndex + 5] || '',
+        note: '',
+        selected: false,
+        enrolled: true,
+        unavailable: false,
+        remote: false,
+      });
+    }
+    return courses;
+  }
+
+  function mergeCourseRows(doc, enrolledDoc = findEnrolledDoc()) {
+    const courses = new Map(extractCourseRows(doc).map(course => [course.key, course]));
+    for (const course of extractEnrolledRows(enrolledDoc)) courses.set(course.key, course);
+    return [...courses.values()];
   }
 
   function parseSchedule(schedule) {
@@ -169,6 +233,42 @@
       result.push({ day, slot, weeks: clean(match[3]) });
     }
     return result;
+  }
+
+  function weekSet(label) {
+    const text = clean(label);
+    if (!text || text.includes('全周')) return null;
+    const weeks = new Set();
+    if (text.includes('前八周')) {
+      for (let week = 1; week <= 8; week += 1) weeks.add(week);
+    } else if (text.includes('后八周')) {
+      for (let week = 9; week <= 16; week += 1) weeks.add(week);
+    } else {
+      for (const match of text.matchAll(/(\d+)(?:\s*[-—~至]\s*(\d+))?/g)) {
+        const start = Number(match[1]);
+        const end = Number(match[2] || match[1]);
+        for (let week = start; week <= end; week += 1) weeks.add(week);
+      }
+    }
+    if (text.includes('单周')) for (const week of [...weeks]) if (week % 2 === 0) weeks.delete(week);
+    if (text.includes('双周')) for (const week of [...weeks]) if (week % 2 === 1) weeks.delete(week);
+    return weeks.size ? weeks : null;
+  }
+
+  function weeksOverlap(left, right) {
+    const a = weekSet(left);
+    const b = weekSet(right);
+    return !a || !b || [...a].some(week => b.has(week));
+  }
+
+  function markConflicts(courses) {
+    const occupied = courses.filter(course => course.enrolled).flatMap(course => parseSchedule(course.schedule));
+    return courses.map(course => ({
+      ...course,
+      conflict: !course.enrolled && parseSchedule(course.schedule).some(occurrence => occupied.some(enrolled =>
+        occurrence.day === enrolled.day && occurrence.slot === enrolled.slot && weeksOverlap(occurrence.weeks, enrolled.weeks),
+      )),
+    }));
   }
 
   function injectStyle(doc) {
@@ -193,9 +293,9 @@
       .tm-time { padding:7px 3px;background:#f6f7f9;text-align:center;font-weight:700; }.tm-time small { display:block;margin-top:2px;color:#777;font-size:10px;font-weight:400; }
       .tm-slot { min-height:54px;padding:2px;background:#fff;display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:2px;align-content:start; }
       .tm-card { position:relative;padding:3px 4px;border-left:3px solid var(--tm-color);border-radius:3px;background:color-mix(in srgb,var(--tm-color) 10%,white);box-shadow:0 1px 2px rgba(0,0,0,.08);font-size:11px;line-height:1.2; }
-      .tm-card.tm-selected { background:#e4f5e9;outline:2px solid #2d9348; }.tm-card.tm-over { box-shadow:inset 0 0 0 2px rgba(198,40,40,.35); }
-      .tm-card-head { display:flex;align-items:flex-start;gap:3px; }.tm-card-head label { display:flex;align-items:flex-start;gap:3px;min-width:0;flex:1;cursor:pointer; }
-      .tm-card-head input { margin:1px 0 0;flex:0 0 auto; }.tm-card-title { overflow:hidden;font-size:12px;font-weight:700;white-space:nowrap;text-overflow:ellipsis; }
+      .tm-card.tm-selected { background:#e4f5e9;outline:2px solid #2d9348; }.tm-card.tm-enrolled { background:#e8f1fb;outline:2px solid #4879ad; }.tm-card.tm-conflict { background:#eceff2;filter:grayscale(.8);opacity:.5; }.tm-card.tm-over { box-shadow:inset 0 0 0 2px rgba(198,40,40,.35); }
+      .tm-card-head { display:flex;align-items:flex-start;gap:3px; }.tm-card-head label { display:flex;align-items:flex-start;gap:3px;min-width:0;flex:1;cursor:pointer; }.tm-card.tm-enrolled .tm-card-head label,.tm-card.tm-conflict .tm-card-head label { cursor:default; }
+      .tm-card-head input { margin:1px 0 0;flex:0 0 auto; }.tm-card-title { overflow:hidden;font-size:12px;font-weight:700;white-space:nowrap;text-overflow:ellipsis; }.tm-card-state { flex:0 0 auto;padding:1px 4px;border-radius:3px;background:#4879ad;color:#fff;font-size:9px; }.tm-conflict-note { color:#8a3333;font-weight:700; }
       .tm-card select { max-width:76px;height:20px;padding:0;border:1px solid #aaa;border-radius:3px;background:#fff;font-size:10px; }
       .tm-meta { margin-top:2px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }.tm-note { color:#76520d; }.tm-count { font-weight:700; }.tm-count.tm-count-high { color:#c62828; }.tm-count.tm-count-mid { color:#a96200; }.tm-count.tm-count-low { color:#248a3d; }
       .tm-unparsed { margin-top:5px;padding:7px;border:1px solid #ddd;border-radius:5px;background:#fff; }.tm-unparsed summary { cursor:pointer;font-weight:700; }.tm-unparsed p { margin:4px 0; }
@@ -327,11 +427,43 @@
   }
 
   function statsResponseSignature(doc) {
-    const table = [...doc.querySelectorAll('table')].find(candidate => {
-      const text = clean(candidate.textContent);
-      return text.includes('报名总人数') && text.includes('学位课报名人数');
-    });
-    return `${clean(table?.textContent || '')}|${clean(doc.body?.textContent || '').includes('没有记录')}`;
+    const rows = [...doc.querySelectorAll('tr')].map(row => clean(row.textContent)).join('|');
+    return `${rows}|${clean(doc.body?.textContent || '').includes('没有记录')}`;
+  }
+
+  function mergeStatsResults(left, right) {
+    const merged = { sections: new Map(left.sections), updatedAt: left.updatedAt || right.updatedAt };
+    for (const [section, record] of right.sections) merged.sections.set(section, record);
+    return merged;
+  }
+
+  function nextStatsPage(doc) {
+    return [...doc.querySelectorAll('a')].find(link =>
+      clean(link.textContent) === '下一页' && /javascript:\s*turn\(\d+\)/i.test(link.getAttribute('href') || ''),
+    ) || null;
+  }
+
+  async function collectStatsPages(frame, code, firstResult) {
+    let result = firstResult;
+    let currentDoc = findStatsDoc(frame.contentWindow);
+    let signature = currentDoc ? statsResponseSignature(currentDoc) : '';
+    const seen = new Set([signature]);
+    for (let page = 1; currentDoc && page < 20; page += 1) {
+      const next = nextStatsPage(currentDoc);
+      if (!next) break;
+      next.click();
+      const nextDoc = await waitFor(() => {
+        const doc = findStatsDoc(frame.contentWindow);
+        const nextSignature = doc ? statsResponseSignature(doc) : '';
+        return doc && nextSignature !== signature && !seen.has(nextSignature) ? doc : null;
+      }, 10000);
+      if (!nextDoc) break;
+      currentDoc = nextDoc;
+      signature = statsResponseSignature(currentDoc);
+      seen.add(signature);
+      result = mergeStatsResults(result, parseStatsTable(currentDoc, code));
+    }
+    return result;
   }
 
   async function queryCode(code, term) {
@@ -369,7 +501,7 @@
 
     if (!result) throw new Error('统计查询超时');
     if (result.error) throw new Error(result.error);
-    return result;
+    return result.sections.size ? collectStatsPages(frame, code, result) : result;
   }
 
   async function refreshCounts(doc, codes) {
@@ -411,15 +543,18 @@
 
   function cardHtml(course, occurrence) {
     const count = countInfo(course);
-    const disabled = course.unavailable ? 'disabled' : '';
-    const title = [course.schedule, course.note, count.detail].filter(Boolean).join('\n');
-    return `<div class="tm-card ${course.selected ? 'tm-selected' : ''} ${count.level === 'high' ? 'tm-over' : ''}" data-key="${course.key}" style="--tm-color:${colorFor(course.name)}" title="${escapeHtml(title)}">
+    const disabled = course.unavailable || course.conflict ? 'disabled' : '';
+    const status = course.enrolled ? '已选定' : course.conflict ? '与已选定课程时间冲突' : '';
+    const title = [status, course.schedule, course.note, count.detail].filter(Boolean).join('\n');
+    return `<div class="tm-card ${course.selected ? 'tm-selected' : ''} ${course.enrolled ? 'tm-enrolled' : ''} ${course.conflict ? 'tm-conflict' : ''} ${count.level === 'high' ? 'tm-over' : ''}" data-key="${course.key}" style="--tm-color:${colorFor(course.name)}" title="${escapeHtml(title)}">
       <div class="tm-card-head">
-        <label><input data-pick type="checkbox" ${course.selected ? 'checked' : ''} ${disabled}><span class="tm-card-title">${escapeHtml(course.name)}</span></label>
-        ${course.wishSelect ? `<select data-wish ${disabled}>${wishOptions(course)}</select>` : ''}
+        <label>${course.enrolled ? '<span class="tm-card-state">已选定</span>' : `<input data-pick type="checkbox" ${course.selected ? 'checked' : ''} ${disabled}`}><span class="tm-card-title">${escapeHtml(course.name)}</span></label>
+        ${!course.enrolled && course.wishSelect ? `<select data-wish ${disabled}>${wishOptions(course)}</select>` : ''}
       </div>
       <div class="tm-meta">${course.code}-${course.section} · ${escapeHtml(occurrence.weeks)} · ${escapeHtml(course.teacher || '教师未定')}</div>
       ${course.note ? `<div class="tm-meta tm-note">${escapeHtml(course.note)}</div>` : ''}
+      ${course.enrolled && course.wishLabel ? `<div class="tm-meta">${escapeHtml(course.wishLabel)}</div>` : ''}
+      ${course.conflict ? '<div class="tm-meta tm-conflict-note">与已选定课程冲突，不可选</div>' : ''}
       <div class="tm-meta">${escapeHtml(course.credits)}学分 · <span class="tm-count tm-count-${count.level}">${escapeHtml(count.text)}</span></div>
       <div class="tm-meta">${escapeHtml(count.detail)}</div>
     </div>`;
@@ -430,14 +565,16 @@
   }
 
   function selectionSummary(doc) {
-    const selected = selectedCourses(doc);
+    const all = mergeCourseRows(doc);
+    const selected = all.filter(course => course.selected);
+    const enrolled = all.filter(course => course.enrolled);
     const credits = selected.reduce((sum, course) => sum + (Number.parseFloat(course.credits) || 0), 0);
     const wishes = { 第一志愿: 0, 第二志愿: 0, 第三志愿: 0 };
     for (const course of selected) {
       const label = clean(course.wishSelect?.selectedOptions?.[0]?.textContent);
       if (label in wishes) wishes[label] += 1;
     }
-    return `已选 ${selected.length} 门 / ${credits} 学分 · 一志愿 ${wishes.第一志愿}/1 · 二志愿 ${wishes.第二志愿}/2 · 三志愿 ${wishes.第三志愿}`;
+    return `已选定 ${enrolled.length} 门 · 待提交 ${selected.length} 门 / ${credits} 学分 · 一志愿 ${wishes.第一志愿}/1 · 二志愿 ${wishes.第二志愿}/2 · 三志愿 ${wishes.第三志愿}`;
   }
 
   function timetableCourses(doc) {
@@ -445,10 +582,10 @@
     const showRestricted = modal?.querySelector('[data-restricted]')?.checked;
     const showAlternatives = modal?.querySelector('[data-alternatives]')?.checked;
     const query = clean(modal?.querySelector('[data-filter]')?.value).toLowerCase();
-    const all = extractCourseRows(doc);
-    const selectedByCode = new Map(all.filter(course => course.selected).map(course => [course.code, course.section]));
+    const all = markConflicts(mergeCourseRows(doc));
+    const selectedByCode = new Map(all.filter(course => course.selected || course.enrolled).map(course => [course.code, course.section]));
     return all.filter(course => {
-      if (!showRestricted && (course.unavailable || course.remote)) return false;
+      if (!showRestricted && !course.enrolled && (course.unavailable || course.remote)) return false;
       if (!showAlternatives && selectedByCode.has(course.code) && selectedByCode.get(course.code) !== course.section) return false;
       return !query || `${course.name} ${course.code} ${course.section} ${course.teacher} ${course.note}`.toLowerCase().includes(query);
     });
@@ -465,7 +602,7 @@
     const courses = timetableCourses(doc);
     const signature = courses.map(course => {
       const info = countInfo(course);
-      return `${course.key}-${course.schedule}-${course.note}-${course.selected}-${course.wishSelect?.value}-${info.text}-${info.detail}`;
+      return `${course.key}-${course.schedule}-${course.note}-${course.selected}-${course.enrolled}-${course.conflict}-${course.wishSelect?.value}-${info.text}-${info.detail}`;
     }).join('|') + `|${modal.querySelector('[data-filter]')?.value}|${modal.querySelector('[data-restricted]')?.checked}|${modal.querySelector('[data-alternatives]')?.checked}`;
     if (modal.dataset.signature === signature) return;
     modal.dataset.signature = signature;
@@ -508,9 +645,9 @@
   }
 
   function setCourseChecked(doc, key, checked) {
-    const courses = extractCourseRows(doc);
+    const courses = markConflicts(mergeCourseRows(doc));
     const target = courses.find(course => course.key === key);
-    if (!target || target.unavailable) return;
+    if (!target || target.unavailable || target.enrolled || target.conflict) return;
     if (checked) {
       for (const sibling of courses) {
         if (sibling.code === target.code && sibling.key !== target.key && sibling.checkbox?.checked) sibling.checkbox.click();
@@ -522,8 +659,8 @@
   }
 
   function setCourseWish(doc, key, value) {
-    const course = extractCourseRows(doc).find(item => item.key === key);
-    if (!course?.wishSelect) return;
+    const course = markConflicts(mergeCourseRows(doc)).find(item => item.key === key);
+    if (!course?.wishSelect || course.enrolled || course.conflict) return;
     course.wishSelect.value = value;
     const EventCtor = doc.defaultView?.Event || Event;
     course.wishSelect.dispatchEvent(new EventCtor('change', { bubbles: true }));
@@ -544,7 +681,10 @@
     const root = form || doc;
     const button = [...root.querySelectorAll('button,input')].find(element => clean(element.textContent || element.value) === '提交');
     if (!button) return doc.defaultView.alert('没有找到原选课页面的提交按钮。');
-    if (doc.defaultView.confirm(`确认提交 ${selected.length} 门课程的选课志愿吗？`)) button.click();
+    if (doc.defaultView.confirm(`确认提交 ${selected.length} 门课程的选课志愿吗？`)) {
+      rememberTimetableOpen(true);
+      button.click();
+    }
   }
 
   function ensureTimetable(doc) {
@@ -563,7 +703,7 @@
 
     modal.querySelector('[data-close]').addEventListener('click', () => {
       modal.classList.remove('tm-open');
-      state.timetableOpen = false;
+      rememberTimetableOpen(false);
     });
     modal.querySelector('[data-filter]').addEventListener('input', () => { invalidateTimetable(doc); renderTimetable(doc); });
     modal.querySelector('[data-restricted]').addEventListener('change', () => { invalidateTimetable(doc); renderTimetable(doc); });
@@ -587,7 +727,7 @@
 
   function openTimetable(doc) {
     const modal = ensureTimetable(doc);
-    state.timetableOpen = true;
+    rememberTimetableOpen(true);
     invalidateTimetable(doc);
     renderTimetable(doc);
     modal.classList.add('tm-open');
@@ -595,14 +735,14 @@
 
   function scan(doc) {
     if (!doc?.body) return;
-    const courses = extractCourseRows(doc);
-    if (state.timetableOpen) renderTimetable(doc);
+    const courses = mergeCourseRows(doc);
+    if (state.timetableOpen) openTimetable(doc);
     const missing = [...new Set(courses.map(course => course.code))].filter(code => !state.cache.has(code));
     if (missing.length && !state.loading) refreshCounts(doc, missing);
   }
 
   function attach(doc) {
-    if (state.selectionDoc === doc) return;
+    if (state.selectionDoc === doc && doc.getElementById('tm-helper-panel')) return;
     state.observer?.disconnect();
     state.statsFrame?.remove();
     state.selectionDoc = doc;
@@ -617,6 +757,7 @@
     doc.body.appendChild(panel);
     state.panel = panel;
     panel.querySelector('[data-timetable]').addEventListener('click', () => openTimetable(doc));
+    if (state.timetableOpen) openTimetable(doc);
 
     state.observer = new MutationObserver(mutations => {
       if (mutations.every(mutation => mutation.target.parentElement?.closest?.('#tm-timetable,#tm-helper-panel,.tm-count-cell'))) return;
@@ -630,7 +771,7 @@
 
   if (window.__THU_COURSE_HELPER_TEST__) {
     Object.assign(window.__THU_COURSE_HELPER_TEST__, {
-      sessionPingUrl, sessionExpired, extractCourseRows, parseSchedule, parseStatsTable, statsResponseSignature, wishBreakdown, setCourseChecked, setCourseWish,
+      sessionPingUrl, sessionExpired, rememberTimetableOpen, extractCourseRows, extractEnrolledRows, mergeCourseRows, parseSchedule, weeksOverlap, markConflicts, parseStatsTable, statsResponseSignature, mergeStatsResults, nextStatsPage, wishBreakdown, setCourseChecked, setCourseWish,
     });
     return;
   }
