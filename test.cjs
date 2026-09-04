@@ -3,6 +3,12 @@ const fs = require('node:fs');
 const { JSDOM } = require('jsdom');
 
 const source = fs.readFileSync(__dirname + '/thu-graduate-course-helper.user.js', 'utf8');
+const packageVersion = require('./package.json').version;
+const rawUrl = 'https://raw.githubusercontent.com/Delthin/thu-graduate-course-helper/main/thu-graduate-course-helper.user.js';
+assert.equal(source.match(/@version\s+(\S+)/)?.[1], packageVersion);
+assert.equal(source.match(/@downloadURL\s+(\S+)/)?.[1], rawUrl);
+assert.equal(source.match(/@updateURL\s+(\S+)/)?.[1], rawUrl);
+
 const page = new JSDOM('<!doctype html><body></body>', {
   url: 'https://zhjwxk.cic.tsinghua.edu.cn/xkYjs.vxkYjsXkbBs.do?m=main',
   runScripts: 'outside-only',

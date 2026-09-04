@@ -1,8 +1,12 @@
 // ==UserScript==
 // @name         清华研究生选课报名人数
 // @namespace    local.tsinghua.course-count
-// @version      0.4.3
+// @version      0.4.4
 // @description  用可视化课程表选择培养计划课程、设置志愿、显示报名人数并维持登录态
+// @homepageURL  https://github.com/Delthin/thu-graduate-course-helper
+// @supportURL   https://github.com/Delthin/thu-graduate-course-helper/issues
+// @downloadURL  https://raw.githubusercontent.com/Delthin/thu-graduate-course-helper/main/thu-graduate-course-helper.user.js
+// @updateURL    https://raw.githubusercontent.com/Delthin/thu-graduate-course-helper/main/thu-graduate-course-helper.user.js
 // @match        https://zhjwxk.cic.tsinghua.edu.cn/xkYjs.vxkYjsXkbBs.do*
 // @noframes
 // @run-at       document-idle

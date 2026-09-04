@@ -4,7 +4,7 @@
 
 > 仅匹配 `https://zhjwxk.cic.tsinghua.edu.cn/` 下的研究生选课页面；不会把课程或个人信息发送到第三方服务器。
 
-**[安装 / 更新脚本](https://raw.githubusercontent.com/Delthin/thu-graduate-course-helper/main/thu-graduate-course-helper.user.js)** · 当前版本 `0.4.3` · 支持 Edge / Chrome + Tampermonkey
+**已经装好 Tampermonkey？[点这里一键安装 / 更新脚本](https://raw.githubusercontent.com/Delthin/thu-graduate-course-helper/main/thu-graduate-course-helper.user.js)** · 当前版本 `0.4.4`
 
 ## 界面与操作图示
 
@@ -25,33 +25,24 @@
 - 每三分钟发送一次同站轻量请求，降低因页面闲置造成的登录超时概率。
 - 提交前再次确认；脚本不会自动提交、退课或删除课程。
 
-## 安装
+## 安装（首次仅两步）
 
-### 1. 安装油猴扩展
+### 1. 安装 Tampermonkey（只需一次）
 
-安装以下任一扩展：
+按浏览器选择：
 
-- [Tampermonkey 官网](https://www.tampermonkey.net/)
-- Microsoft Edge 扩展商店中的 Tampermonkey
-- Chrome 网上应用店中的 Tampermonkey
+- **Edge**：[打开 Edge 扩展商店安装 Tampermonkey](https://microsoftedge.microsoft.com/addons/detail/tampermonkey/iikmkjmpaadaobahmlepeloendndfphd)
+- **Chrome**：[打开 Chrome 应用商店安装 Tampermonkey](https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo)
 
-安装后确认扩展已启用，并允许它在 `zhjwxk.cic.tsinghua.edu.cn` 上运行。
+已经安装过 Tampermonkey，可以跳过这一步。
 
-### 2. 安装脚本
+### 2. 一键安装脚本
 
-#### 本地安装
+点击 **[一键安装 / 更新选课助手](https://raw.githubusercontent.com/Delthin/thu-graduate-course-helper/main/thu-graduate-course-helper.user.js)**，在 Tampermonkey 弹出的页面确认安装即可。
 
-1. 打开 Tampermonkey 管理面板。
-2. 点击“添加新脚本”。
-3. 删除编辑器中的默认内容。
-4. 将 [`thu-graduate-course-helper.user.js`](./thu-graduate-course-helper.user.js) 的全部内容粘贴进去。
-5. 按 `Ctrl+S` 保存。
+安装一次后，Tampermonkey 会根据脚本内的更新地址自动检查新版本，不再需要复制代码或手动覆盖。
 
-#### 从 GitHub 安装（推荐）
-
-点击 **[安装 / 更新脚本](https://raw.githubusercontent.com/Delthin/thu-graduate-course-helper/main/thu-graduate-course-helper.user.js)**，Tampermonkey 会打开安装页面，确认覆盖安装即可。
-
-以后再次打开同一链接即可更新；脚本的 `@name` 和 `@namespace` 保持不变，不会重复安装成多个脚本。
+如果链接只显示代码而没有安装页面，说明 Tampermonkey 尚未安装、未启用，或没有获得运行用户脚本的权限；处理后重新点击上面的安装链接即可。
 
 ## 使用流程
 
