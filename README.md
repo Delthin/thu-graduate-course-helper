@@ -172,17 +172,6 @@ LICENSE                             # MIT License
 
 本项目是非官方辅助工具。选课结果、容量、报名人数和志愿规则均以清华大学教务系统实际显示及学校通知为准。提交前请自行核对课程、课序、志愿和时间冲突。
 
-## 宣传素材
-
-`promo/xhs/` 中包含 6 张可直接用于小红书轮播的 1080×1440 宣传图；`promo/xiaohongshu-demo.mp4` 是 15.5 秒无声竖版演示视频，发布文案位于 `promo/xiaohongshu-copy.md`。
-
-重新生成素材：
-
-```powershell
-python scripts/build_assets.py
-powershell -ExecutionPolicy Bypass -File scripts/build_video.ps1
-```
-
 ## License
 
 [MIT](./LICENSE)
