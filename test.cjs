@@ -10,7 +10,7 @@ const page = new JSDOM('<!doctype html><body></body>', {
 page.window.__THU_COURSE_HELPER_TEST__ = {};
 page.window.eval(source);
 const {
-  sessionPingUrl, sessionExpired, rememberTimetableOpen, extractCourseRows, extractEnrolledRows, mergeCourseRows, parseSchedule, weeksOverlap, markConflicts, parseStatsTable, statsResponseSignature, mergeStatsResults, nextStatsPage, wishBreakdown, setCourseChecked, setCourseWish,
+  sessionPingUrl, sessionExpired, rememberTimetableOpen, extractCourseRows, extractEnrolledRows, mergeCourseRows, parseSchedule, weeksOverlap, markConflicts, parseStatsTable, statsResponseSignature, mergeStatsResults, nextStatsPage, collectStatsPages, wishBreakdown, setCourseChecked, setCourseWish,
 } = page.window.__THU_COURSE_HELPER_TEST__;
 
 assert.equal(
@@ -82,13 +82,31 @@ assert.equal(mergedStats.sections.size, 2);
 assert.equal(mergedStats.sections.get('50').total, 9);
 assert.equal(nextStatsPage(statsPage2.window.document).id, 'nextpage');
 assert.equal(nextStatsPage(new JSDOM('<body>末页</body>').window.document), null);
+const nextLink = stats.window.document.createElement('a');
+nextLink.href = 'javascript:turn(1);';
+nextLink.textContent = '下一页';
+stats.window.document.body.appendChild(nextLink);
+let currentStatsWindow = stats.window;
+nextLink.addEventListener('click', event => {
+  event.preventDefault();
+  currentStatsWindow = statsPage2.window;
+});
+statsPage2.window.document.querySelector('#nextpage').remove();
+const fakeStatsFrame = { get contentWindow() { return currentStatsWindow; } };
 const wishes = wishBreakdown({ degree: '(8)1,2,3', nonDegree: '（2）4,5,6' });
 assert.equal(wishes.priority, 10);
 assert.equal(wishes.first, 5);
 assert.equal(wishes.second, 7);
 assert.equal(wishes.third, 9);
 const beforeStats = statsResponseSignature(stats.window.document);
-stats.window.document.querySelectorAll('tr')[1].cells[5].textContent = '9';
+stats.window.document.querySelectorAll('tr')[2].cells[5].textContent = '9';
 assert.notEqual(statsResponseSignature(stats.window.document), beforeStats);
 
-console.log('userscript parser and selection checks passed');
+collectStatsPages(fakeStatsFrame, '00000001', result).then(paged => {
+  assert.equal(paged.sections.size, 2);
+  assert.equal(paged.sections.get('50').total, 9);
+  console.log('userscript parser and selection checks passed');
+}).catch(error => {
+  console.error(error);
+  process.exitCode = 1;
+});
