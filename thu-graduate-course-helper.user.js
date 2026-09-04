@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         清华研究生选课报名人数
 // @namespace    local.tsinghua.course-count
-// @version      0.4.2
+// @version      0.4.3
 // @description  用可视化课程表选择培养计划课程、设置志愿、显示报名人数并维持登录态
 // @match        https://zhjwxk.cic.tsinghua.edu.cn/xkYjs.vxkYjsXkbBs.do*
 // @noframes
@@ -31,10 +31,15 @@
     statsFrame: null,
     term: null,
     cache: new Map(),
+    cacheTerm: null,
+    enrolledCache: [],
     loading: false,
     keepingAlive: false,
     scanTimer: null,
     timetableOpen: false,
+    filter: '',
+    showRestricted: false,
+    showAlternatives: false,
     countStatus: '准备中…',
   };
   try {
@@ -84,12 +89,21 @@
     }) || null;
   }
 
+  function enrolledDocReady(doc) {
+    const text = clean(doc?.body?.textContent || '');
+    return text.includes('您共选择了') && text.includes('课程号') && text.includes('课序号');
+  }
+
   function getTerm(doc) {
-    try {
-      return new URL(doc.location.href).searchParams.get('p_xnxq') || '2026-2027-1';
-    } catch (_) {
-      return '2026-2027-1';
+    for (const candidate of [doc, ...allDocs(window)]) {
+      try {
+        const term = new URL(candidate.location.href).searchParams.get('p_xnxq');
+        if (term) return term;
+      } catch (_) {
+        // 继续查找其他同源 frame。
+      }
     }
+    return '2026-2027-1';
   }
 
   function sessionPingUrl(term, nonce = Date.now()) {
@@ -214,8 +228,11 @@
   }
 
   function mergeCourseRows(doc, enrolledDoc = findEnrolledDoc()) {
+    if (enrolledDocReady(enrolledDoc)) {
+      state.enrolledCache = extractEnrolledRows(enrolledDoc).map(course => ({ ...course, row: null }));
+    }
     const courses = new Map(extractCourseRows(doc).map(course => [course.key, course]));
-    for (const course of extractEnrolledRows(enrolledDoc)) courses.set(course.key, course);
+    for (const course of state.enrolledCache) courses.set(course.key, course);
     return [...courses.values()];
   }
 
@@ -302,6 +319,19 @@
       .tm-empty { grid-column:1/-1;color:#bbb;text-align:center;padding:17px 0; }
     `;
     (doc.head || doc.documentElement).appendChild(style);
+  }
+
+  function prepareCacheTerm(term) {
+    if (state.cacheTerm && state.cacheTerm !== term) {
+      state.cache.clear();
+      state.enrolledCache = [];
+      state.countStatus = '准备中…';
+    }
+    state.cacheTerm = term;
+  }
+
+  function cacheStats(code, value) {
+    state.cache.set(code, value);
   }
 
   function getRecord(course) {
@@ -514,10 +544,10 @@
     for (const code of codes) {
       try {
         const result = await queryCode(code, term);
-        state.cache.set(code, { sections: result.sections, empty: result.empty });
+        cacheStats(code, { sections: result.sections, empty: result.empty });
         updatedAt ||= result.updatedAt;
       } catch (error) {
-        state.cache.set(code, { error: error.message, sections: new Map() });
+        cacheStats(code, { error: error.message, sections: new Map() });
       }
       done += 1;
       invalidateTimetable(doc);
@@ -578,10 +608,9 @@
   }
 
   function timetableCourses(doc) {
-    const modal = doc.getElementById('tm-timetable');
-    const showRestricted = modal?.querySelector('[data-restricted]')?.checked;
-    const showAlternatives = modal?.querySelector('[data-alternatives]')?.checked;
-    const query = clean(modal?.querySelector('[data-filter]')?.value).toLowerCase();
+    const showRestricted = state.showRestricted;
+    const showAlternatives = state.showAlternatives;
+    const query = state.filter.toLowerCase();
     const all = markConflicts(mergeCourseRows(doc));
     const selectedByCode = new Map(all.filter(course => course.selected || course.enrolled).map(course => [course.code, course.section]));
     return all.filter(course => {
@@ -700,14 +729,17 @@
       <button data-refresh type="button">刷新人数</button><button data-clear type="button">清空勾选</button><button data-submit type="button">提交所选</button><button data-close type="button">关闭</button>
     </div><div class="tm-tt-body" data-grid></div>`;
     doc.body.appendChild(modal);
+    modal.querySelector('[data-filter]').value = state.filter;
+    modal.querySelector('[data-restricted]').checked = state.showRestricted;
+    modal.querySelector('[data-alternatives]').checked = state.showAlternatives;
 
     modal.querySelector('[data-close]').addEventListener('click', () => {
       modal.classList.remove('tm-open');
       rememberTimetableOpen(false);
     });
-    modal.querySelector('[data-filter]').addEventListener('input', () => { invalidateTimetable(doc); renderTimetable(doc); });
-    modal.querySelector('[data-restricted]').addEventListener('change', () => { invalidateTimetable(doc); renderTimetable(doc); });
-    modal.querySelector('[data-alternatives]').addEventListener('change', () => { invalidateTimetable(doc); renderTimetable(doc); });
+    modal.querySelector('[data-filter]').addEventListener('input', event => { state.filter = clean(event.target.value); invalidateTimetable(doc); renderTimetable(doc); });
+    modal.querySelector('[data-restricted]').addEventListener('change', event => { state.showRestricted = event.target.checked; invalidateTimetable(doc); renderTimetable(doc); });
+    modal.querySelector('[data-alternatives]').addEventListener('change', event => { state.showAlternatives = event.target.checked; invalidateTimetable(doc); renderTimetable(doc); });
     modal.querySelector('[data-refresh]').addEventListener('click', () => {
       if (state.loading) return;
       state.cache.clear();
@@ -748,7 +780,7 @@
     state.selectionDoc = doc;
     state.statsFrame = null;
     state.term = null;
-    state.cache.clear();
+    prepareCacheTerm(getTerm(doc));
     injectStyle(doc);
 
     const panel = doc.createElement('div');
@@ -771,7 +803,7 @@
 
   if (window.__THU_COURSE_HELPER_TEST__) {
     Object.assign(window.__THU_COURSE_HELPER_TEST__, {
-      sessionPingUrl, sessionExpired, rememberTimetableOpen, extractCourseRows, extractEnrolledRows, mergeCourseRows, parseSchedule, weeksOverlap, markConflicts, parseStatsTable, statsResponseSignature, mergeStatsResults, nextStatsPage, collectStatsPages, wishBreakdown, setCourseChecked, setCourseWish,
+      sessionPingUrl, sessionExpired, rememberTimetableOpen, enrolledDocReady, extractCourseRows, extractEnrolledRows, mergeCourseRows, prepareCacheTerm, cacheStats, getRecord, parseSchedule, weeksOverlap, markConflicts, parseStatsTable, statsResponseSignature, mergeStatsResults, nextStatsPage, collectStatsPages, wishBreakdown, setCourseChecked, setCourseWish,
     });
     return;
   }

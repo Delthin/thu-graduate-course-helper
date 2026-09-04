@@ -1,6 +1,6 @@
 {
   "name": "thu-graduate-course-helper",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "private": true,
   "description": "清华大学研究生选课课程表、志愿人数与登录保活油猴脚本",
   "scripts": {

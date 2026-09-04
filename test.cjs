@@ -10,7 +10,7 @@ const page = new JSDOM('<!doctype html><body></body>', {
 page.window.__THU_COURSE_HELPER_TEST__ = {};
 page.window.eval(source);
 const {
-  sessionPingUrl, sessionExpired, rememberTimetableOpen, extractCourseRows, extractEnrolledRows, mergeCourseRows, parseSchedule, weeksOverlap, markConflicts, parseStatsTable, statsResponseSignature, mergeStatsResults, nextStatsPage, collectStatsPages, wishBreakdown, setCourseChecked, setCourseWish,
+  sessionPingUrl, sessionExpired, rememberTimetableOpen, enrolledDocReady, extractCourseRows, extractEnrolledRows, mergeCourseRows, prepareCacheTerm, cacheStats, getRecord, parseSchedule, weeksOverlap, markConflicts, parseStatsTable, statsResponseSignature, mergeStatsResults, nextStatsPage, collectStatsPages, wishBreakdown, setCourseChecked, setCourseWish,
 } = page.window.__THU_COURSE_HELPER_TEST__;
 
 assert.equal(
@@ -27,6 +27,12 @@ rememberTimetableOpen(true);
 assert.equal(page.window.sessionStorage.getItem('thu-course-helper-timetable-open'), '1');
 rememberTimetableOpen(false);
 assert.equal(page.window.sessionStorage.getItem('thu-course-helper-timetable-open'), null);
+prepareCacheTerm('2026-2027-1');
+cacheStats('00999999', { sections: new Map([['0', { total: 7 }]]) });
+prepareCacheTerm('2026-2027-1');
+assert.equal(getRecord({ code: '00999999', section: '0' }).total, 7);
+prepareCacheTerm('2027-2028-1');
+assert.equal(getRecord({ code: '00999999', section: '0' }), null);
 
 const selection = new JSDOM(`<!doctype html><body><form>
 <input id="p_kch"><button>提交</button><table>
@@ -61,6 +67,12 @@ const mergedCourses = markConflicts(mergeCourseRows(selection.window.document, e
 assert.equal(mergedCourses.find(course => course.key === '00000001-0').enrolled, true);
 assert.equal(mergedCourses.find(course => course.key === '00000002-0').conflict, true);
 assert.equal(mergedCourses.find(course => course.key === '00000003-0').conflict, false);
+const loadingEnrolled = new JSDOM('<!doctype html><body></body>', { url: enrolled.window.location.href });
+assert.equal(enrolledDocReady(loadingEnrolled.window.document), false);
+assert.equal(mergeCourseRows(selection.window.document, loadingEnrolled.window.document).find(course => course.key === '00000001-0').enrolled, true);
+const emptyEnrolled = new JSDOM('<!doctype html><body>您共选择了0学分<table><tr><th>课程号</th><th>课序号</th></tr></table></body>', { url: enrolled.window.location.href });
+assert.equal(enrolledDocReady(emptyEnrolled.window.document), true);
+assert.equal(mergeCourseRows(selection.window.document, emptyEnrolled.window.document).filter(course => course.enrolled).length, 0);
 assert.equal(weeksOverlap('前八周', '后八周'), false);
 assert.equal(weeksOverlap('全周', '后八周'), true);
 
