@@ -48,7 +48,7 @@
 仓库发布到 GitHub 后，打开脚本文件的 Raw 地址，Tampermonkey 通常会自动显示安装页面：
 
 ```text
-https://raw.githubusercontent.com/<你的用户名>/<仓库名>/main/thu-graduate-course-helper.user.js
+https://raw.githubusercontent.com/Delthin/thu-graduate-course-helper/main/thu-graduate-course-helper.user.js
 ```
 
 以后再次打开该 Raw 地址即可覆盖更新；脚本的 `@name` 和 `@namespace` 保持不变，不会重复安装成多个脚本。

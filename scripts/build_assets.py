@@ -122,7 +122,7 @@ def draw_course_card(draw, box, name, code, note, total, wishes, accent=PURPLE, 
     draw.text((x1 + 14, y1 + positions[0]), ellipsize(draw, code, font(meta_size), x2 - x1 - 28), font=font(meta_size), fill=MUTED)
     if note:
         draw.text((x1 + 14, y1 + positions[1]), ellipsize(draw, note, font(meta_size), x2 - x1 - 28), font=font(meta_size), fill="#815C10")
-    draw.text((x1 + 14, y1 + positions[2]), f"2学分 · {total}", font=font(meta_size, True), fill=GREEN if "—" not in total else MUTED)
+    draw.text((x1 + 14, y1 + positions[2]), total, font=font(meta_size, True), fill=GREEN if "—" not in total else MUTED)
     draw.text((x1 + 14, y1 + positions[3]), ellipsize(draw, wishes, font(meta_size), x2 - x1 - 28), font=font(meta_size), fill=INK)
 
 
@@ -169,10 +169,10 @@ def draw_browser_mock(base, box, dense=True):
         draw.text((gx1 + time_w / 2, yy + 24), f"第{r + 1}大节", font=font(13, True), fill=INK, anchor="mm")
 
     cards = [
-        (1, 0, "工程硕士数学", "60428004-0 · 全周 · 陈俊清", "", "总108/159", "一15 · 二12 · 三81", PURPLE),
-        (4, 0, "硕士生英语", "64200012-1 · 全周 · 张英", "论文阅读写作", "总144/35", "一78 · 二21 · 三45", ORANGE),
-        (1, 2, "数据仓库与数据挖掘", "74100072-0 · 前八周 · 宋韶旭", "优先：软件学院学生", "总11/50", "一0 · 二0 · 三0 · 优11", PURPLE),
-        (3, 3 if rows > 3 else 2, "领域特定语言设计", "84100293-0 · 全周 · 姜宇", "优先：软件学院学生", "总—/60", "暂无统计", GREEN),
+        (1, 0, "工程硕士数学", "公共基础课 · 全周", "", "总108/159", "一15 · 二12 · 三81", PURPLE),
+        (4, 0, "硕士生英语", "公共基础课 · 全周", "论文阅读写作", "总63/80", "一28 · 二17 · 三18", ORANGE),
+        (1, 2, "自然辩证法概论", "公共必修课 · 前八周", "", "总52/120", "一20 · 二11 · 三21", PURPLE),
+        (3, 3 if rows > 3 else 2, "新时代中国特色社会主义理论与实践", "公共必修课 · 后八周", "", "总89/120", "一34 · 二25 · 三30", GREEN),
     ]
     for col, row, name, code, note, total, wishes, color in cards:
         if row >= rows:
@@ -185,167 +185,146 @@ def draw_browser_mock(base, box, dense=True):
 
 
 def cover():
-    img = gradient((1080, 1440), "#5B3BE8", "#FF765A").convert("RGBA")
+    img = Image.new("RGBA", (1080, 1440), PAPER)
     d = ImageDraw.Draw(img)
-    for x, y, r, alpha in ((930, 190, 210, 34), (120, 1120, 260, 26), (920, 1170, 150, 34)):
-        d.ellipse((x - r, y - r, x + r, y + r), fill=(255, 255, 255, alpha))
-    pill(d, (72, 70), "研究生选课效率工具", "#FFFFFF33", WHITE, size=26)
-    text_block(d, (72, 164), "清华研究生选课\n终于不用盯列表了", font(68, True), WHITE, spacing=12)
-    d.text((74, 350), "课程表可视化 · 一二三志愿人数 · 登录保活", font=font(28), fill="#FFF4EE")
-    shadow_panel(img, (55, 455, 1025, 1325), 34, WHITE, 30, 14)
-    draw_browser_mock(img, (85, 485, 995, 1295), dense=False)
+    d.text((72, 66), "清华研究生选课课程表助手", font=font(26, True), fill=PURPLE)
+    text_block(d, (72, 128), "把选课列表\n换成课程表", font(68, True), INK, spacing=12)
+    d.text((74, 318), "课程时间 · 一二三志愿人数 · 登录状态", font=font(28), fill=MUTED)
+    rounded(d, (55, 390, 1025, 1325), 30, WHITE, outline=LINE, width=2)
+    draw_browser_mock(img, (85, 420, 995, 1295), dense=False)
     d = ImageDraw.Draw(img)
-    pill(d, (72, 1350), "油猴脚本 · 开源 MIT", "#202438", WHITE, size=23)
+    d.text((72, 1360), "Tampermonkey · MIT License", font=font(22), fill=MUTED)
     img.convert("RGB").save(XHS / "01-cover.png", quality=95)
 
 
 def features():
     img = Image.new("RGBA", (1080, 1440), PAPER)
     d = ImageDraw.Draw(img)
-    pill(d, (68, 62), "功能总览", PURPLE, WHITE, size=24)
-    text_block(d, (68, 132), "把难用的选课列表\n变成真正的课程表", font(58, True), INK, spacing=10)
-    d.text((70, 280), "按时间看冲突，按人数填志愿", font=font(27), fill=MUTED)
-    shadow_panel(img, (50, 345, 1030, 1120), 30, WHITE, 22, 10)
-    draw_browser_mock(img, (74, 370, 1006, 1095), dense=False)
+    d.text((68, 62), "功能", font=font(25, True), fill=PURPLE)
+    text_block(d, (68, 120), "课程时间和志愿人数\n放在同一张课表里", font(58, True), INK, spacing=10)
+    d.text((70, 270), "按星期查看课程，直接判断时间冲突", font=font(27), fill=MUTED)
+    rounded(d, (50, 330, 1030, 1095), 28, WHITE, outline=LINE, width=2)
+    draw_browser_mock(img, (74, 354, 1006, 1071), dense=False)
     d = ImageDraw.Draw(img)
     badges = [
-        ("01", "课程表排布", "星期 × 大节，一眼看冲突"),
-        ("02", "志愿竞争", "总人数、一二三志愿、优先人数"),
-        ("03", "备注区分", "论文写作 / 国际交流不再混淆"),
-        ("04", "登录保活", "绿色状态点，每 3 分钟检查"),
+        ("课程表排布", "星期 × 大节"),
+        ("志愿人数", "总数 + 一二三志愿"),
+        ("课程备注", "区分同名课程方向"),
+        ("登录状态", "状态点实时提示"),
     ]
-    y = 1155
-    for i, (num, title, sub) in enumerate(badges):
+    y = 1135
+    for i, (title, sub) in enumerate(badges):
         x = 60 + (i % 2) * 510
         yy = y + (i // 2) * 105
-        rounded(d, (x, yy, x + 490, yy + 88), 18, WHITE, outline=LINE, width=2)
-        rounded(d, (x + 14, yy + 16, x + 72, yy + 72), 14, PURPLE if i < 2 else ORANGE)
-        d.text((x + 43, yy + 44), num, font=font(20, True), fill=WHITE, anchor="mm")
-        d.text((x + 88, yy + 18), title, font=font(23, True), fill=INK)
-        d.text((x + 88, yy + 51), sub, font=font(17), fill=MUTED)
+        rounded(d, (x, yy, x + 490, yy + 88), 14, WHITE, outline=LINE, width=2)
+        d.ellipse((x + 20, yy + 34, x + 38, yy + 52), fill=PURPLE if i < 2 else ORANGE)
+        d.text((x + 56, yy + 14), title, font=font(23, True), fill=INK)
+        d.text((x + 56, yy + 49), sub, font=font(17), fill=MUTED)
     img.convert("RGB").save(XHS / "02-features.png", quality=95)
 
 
 def counts():
-    img = gradient((1080, 1440), "#FFF5EA", "#F0EBFF").convert("RGBA")
+    img = Image.new("RGBA", (1080, 1440), PAPER)
     d = ImageDraw.Draw(img)
-    pill(d, (65, 62), "志愿人数怎么读", ORANGE, WHITE, size=24)
-    text_block(d, (65, 132), "不只看总人数\n一二三志愿要分开看", font(58, True), INK, spacing=10)
-    d.text((67, 286), "同样 100 人，志愿结构不同，中签难度也不同", font=font(25), fill=MUTED)
-    shadow_panel(img, (110, 390, 970, 760), 30, WHITE, 24, 10)
+    d.text((65, 62), "报名统计", font=font(25, True), fill=ORANGE)
+    text_block(d, (65, 120), "总人数之外\n再看一二三志愿", font(58, True), INK, spacing=10)
+    d.text((67, 270), "课程卡片直接显示报名结构", font=font(25), fill=MUTED)
+    rounded(d, (110, 355, 970, 730), 28, WHITE, outline=LINE, width=2)
     d = ImageDraw.Draw(img)
-    draw_course_card(d, (150, 435, 930, 710), "工程硕士数学", "60428004-0 · 全周 · 陈俊清", "", "总108/159", "一15 · 二12 · 三81", PURPLE)
+    draw_course_card(d, (150, 400, 930, 680), "工程硕士数学", "公共基础课 · 全周", "", "总108/159", "一15 · 二12 · 三81", PURPLE)
 
     callouts = [
-        ("总108/159", "报名总人数 / 学校可选容量", GREEN),
-        ("一15", "第一志愿 15 人", PURPLE),
-        ("二12", "第二志愿 12 人", PURPLE),
-        ("三81", "第三志愿 81 人", RED),
-        ("优8", "括号里的优先报名人数", GOLD),
-        ("总—/60", "不是确定为 0，而是暂无统计", MUTED),
+        ("总108/159", "报名总数 / 容量", GREEN),
+        ("一15", "第一志愿", PURPLE),
+        ("二12", "第二志愿", PURPLE),
+        ("三81", "第三志愿", RED),
     ]
-    y = 820
+    y = 790
     for i, (big, small, color) in enumerate(callouts):
         x = 62 + (i % 2) * 505
-        yy = y + (i // 2) * 150
-        rounded(d, (x, yy, x + 465, yy + 120), 22, WHITE, outline="#E0DCEA", width=2)
-        d.text((x + 24, yy + 19), big, font=font(30, True), fill=color)
-        d.text((x + 24, yy + 67), small, font=font(20), fill=INK)
-    d.text((65, 1320), "数据以学校“填报志愿情况查询”的统计时间为准", font=font(22), fill=MUTED)
+        yy = y + (i // 2) * 170
+        rounded(d, (x, yy, x + 465, yy + 140), 18, WHITE, outline=LINE, width=2)
+        d.text((x + 24, yy + 24), big, font=font(32, True), fill=color)
+        d.text((x + 24, yy + 80), small, font=font(21), fill=INK)
     img.convert("RGB").save(XHS / "03-counts.png", quality=95)
 
 
 def steps():
-    img = Image.new("RGBA", (1080, 1440), "#F8F9FD")
+    img = Image.new("RGBA", (1080, 1440), PAPER)
     d = ImageDraw.Draw(img)
-    pill(d, (65, 62), "4 步开始使用", PURPLE, WHITE, size=24)
-    text_block(d, (65, 132), "安装后这样选课", font(60, True), INK)
-    d.text((67, 226), "无需改学校网页，油猴脚本自动接管展示", font=font(25), fill=MUTED)
+    d.text((65, 62), "使用流程", font=font(25, True), fill=PURPLE)
+    text_block(d, (65, 120), "4 步打开课程表", font(60, True), INK)
     items = [
-        ("1", "安装 Tampermonkey", "Edge / Chrome 扩展商店均可", "扩展"),
-        ("2", "粘贴并保存脚本", "打开 .user.js，Ctrl+S 保存", "脚本"),
-        ("3", "从信息门户进入选课", "应用导航 → 研究生选课 → 选课", "门户"),
-        ("4", "打开课程表并填志愿", "勾选课序 → 选志愿 → 确认提交", "课程表"),
+        ("1", "安装 Tampermonkey", "在 Edge 或 Chrome 中安装扩展"),
+        ("2", "保存脚本", "打开 user.js，粘贴并按 Ctrl+S"),
+        ("3", "进入研究生选课", "信息门户 → 应用导航 → 研究生选课"),
+        ("4", "打开课程表", "查看时间和人数，勾选课序并填志愿"),
     ]
-    y = 330
+    y = 275
     colors = (PURPLE, ORANGE, GREEN, RED)
-    for i, (num, title, sub, tag) in enumerate(items):
-        yy = y + i * 240
-        shadow_panel(img, (68, yy, 1012, yy + 190), 28, WHITE, 16, 7)
-        d = ImageDraw.Draw(img)
-        d.ellipse((98, yy + 42, 208, yy + 152), fill=colors[i])
-        d.text((153, yy + 97), num, font=font(50, True), fill=WHITE, anchor="mm")
-        d.text((240, yy + 35), title, font=font(32, True), fill=INK)
-        d.text((240, yy + 88), sub, font=font(23), fill=MUTED)
-        pill(d, (240, yy + 126), tag, "#F0EDFF" if i == 0 else "#FFF2EA", colors[i], size=18)
+    for i, (num, title, sub) in enumerate(items):
+        yy = y + i * 250
+        rounded(d, (68, yy, 1012, yy + 190), 20, WHITE, outline=LINE, width=2)
+        d.ellipse((102, yy + 42, 212, yy + 152), fill=colors[i])
+        d.text((157, yy + 97), num, font=font(48, True), fill=WHITE, anchor="mm")
+        d.text((245, yy + 42), title, font=font(32, True), fill=INK)
+        d.text((245, yy + 102), sub, font=font(23), fill=MUTED)
         if i < 3:
-            d.line((153, yy + 190, 153, yy + 232), fill="#C8CDDA", width=6)
-            d.polygon(((141, yy + 221), (165, yy + 221), (153, yy + 239)), fill="#C8CDDA")
+            d.line((157, yy + 190, 157, yy + 232), fill="#C8CDDA", width=5)
     img.convert("RGB").save(XHS / "04-steps.png", quality=95)
 
 
 def keepalive():
-    img = gradient((1080, 1440), "#EAF9F2", "#F1ECFF").convert("RGBA")
+    img = Image.new("RGBA", (1080, 1440), PAPER)
     d = ImageDraw.Draw(img)
-    pill(d, (65, 62), "登录保活", GREEN, WHITE, size=24)
-    text_block(d, (65, 132), "页面挂久了\n也尽量不掉登录", font(60, True), INK, spacing=10)
-    d.text((67, 286), "每 3 分钟访问一次同站轻量页面，不刷新、不提交", font=font(24), fill=MUTED)
-    shadow_panel(img, (105, 390, 975, 650), 30, WHITE, 22, 10)
+    d.text((65, 62), "登录状态", font=font(25, True), fill=GREEN)
+    text_block(d, (65, 120), "课程表按钮上\n直接显示登录状态", font(60, True), INK, spacing=10)
+    d.text((67, 275), "脚本每 3 分钟执行一次同站检查", font=font(24), fill=MUTED)
+    rounded(d, (105, 360, 975, 650), 28, WHITE, outline=LINE, width=2)
     d = ImageDraw.Draw(img)
-    rounded(d, (240, 475, 840, 570), 20, WHITE, outline="#C9CEDA", width=3)
-    d.text((320, 522), "选课课程表", font=font(34, True), fill=INK, anchor="lm")
-    d.ellipse((770, 505, 798, 533), fill=GREEN)
-    d.text((520, 605), "绿色：最近一次保活检查成功", font=font(22), fill=GREEN, anchor="mm")
+    rounded(d, (240, 455, 840, 550), 16, WHITE, outline="#C9CEDA", width=3)
+    d.text((320, 502), "选课课程表", font=font(34, True), fill=INK, anchor="lm")
+    d.ellipse((770, 485, 798, 513), fill=GREEN)
+    d.text((520, 590), "状态点显示在课程表入口旁", font=font(22), fill=MUTED, anchor="mm")
 
     states = [
-        (GREEN, "绿色", "保活正常"),
+        (GREEN, "绿色", "登录正常"),
         (GOLD, "橙色", "网络请求失败"),
         (RED, "红色", "登录已经失效"),
-        ("#999999", "灰色", "首次检查中"),
+        ("#999999", "灰色", "正在检查"),
     ]
-    y = 735
+    y = 725
     for i, (color, name, desc) in enumerate(states):
-        yy = y + i * 115
-        rounded(d, (115, yy, 965, yy + 90), 20, WHITE, outline=LINE, width=2)
-        d.ellipse((150, yy + 30, 180, yy + 60), fill=color)
-        d.text((210, yy + 24), name, font=font(25, True), fill=INK)
-        d.text((350, yy + 26), desc, font=font(23), fill=MUTED)
-    rounded(d, (115, 1225, 965, 1358), 22, "#FFF5E5", outline="#F3C76E", width=2)
-    d.text((150, 1250), "注意", font=font(24, True), fill=GOLD)
-    text_block(d, (150, 1288), "已经过期的会话仍需从信息门户重新进入；\n服务器绝对期限和浏览器彻底休眠无法绕过。", font(19), INK, spacing=7)
+        yy = y + i * 125
+        rounded(d, (115, yy, 965, yy + 96), 16, WHITE, outline=LINE, width=2)
+        d.ellipse((150, yy + 33, 180, yy + 63), fill=color)
+        d.text((210, yy + 26), name, font=font(25, True), fill=INK)
+        d.text((350, yy + 28), desc, font=font(23), fill=MUTED)
     img.convert("RGB").save(XHS / "05-keepalive.png", quality=95)
 
 
 def opensource():
     img = Image.new("RGBA", (1080, 1440), "#171A28")
     d = ImageDraw.Draw(img)
-    for x, y, r, c in ((930, 170, 190, "#6D4AFF"), (120, 1230, 260, "#FF6B35")):
-        layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
-        ld = ImageDraw.Draw(layer)
-        ld.ellipse((x - r, y - r, x + r, y + r), fill=c + "66")
-        img.alpha_composite(layer.filter(ImageFilter.GaussianBlur(70)))
-    d = ImageDraw.Draw(img)
-    pill(d, (65, 65), "OPEN SOURCE", PURPLE, WHITE, size=24)
-    text_block(d, (65, 145), "脚本已整理成\n完整 Git 仓库", font(62, True), WHITE, spacing=10)
-    d.text((67, 302), "README · 自动测试 · MIT License", font=font(27), fill="#C8CDDC")
+    d.text((65, 65), "开源项目", font=font(25, True), fill="#A995FF")
+    text_block(d, (65, 135), "脚本、说明和测试\n都在 GitHub", font(62, True), WHITE, spacing=10)
+    d.text((67, 300), "github.com/Delthin/thu-graduate-course-helper", font=font(24), fill="#C8CDDC")
     cards = [
-        ("01", "隐私安全", "只访问清华选课系统自身页面"),
-        ("02", "不会自动提交", "提交前仍需人工确认"),
-        ("03", "可自行审计", "核心逻辑全部在一个 user.js 文件"),
-        ("04", "MIT 许可", "可以自由使用、修改和分享"),
+        ("只访问校内系统", "不接入第三方统计服务"),
+        ("提交前确认", "不会自动提交或退课"),
+        ("一个主脚本", "核心逻辑集中在 user.js"),
+        ("MIT License", "可以自由使用、修改和分享"),
     ]
-    y = 405
-    for i, (num, title, sub) in enumerate(cards):
+    y = 395
+    for i, (title, sub) in enumerate(cards):
         yy = y + i * 175
-        rounded(d, (65, yy, 1015, yy + 140), 24, "#24283B", outline="#393F58", width=2)
-        rounded(d, (90, yy + 28, 174, yy + 112), 20, PURPLE if i % 2 == 0 else ORANGE)
-        d.text((132, yy + 70), num, font=font(25, True), fill=WHITE, anchor="mm")
-        d.text((205, yy + 27), title, font=font(29, True), fill=WHITE)
-        d.text((205, yy + 78), sub, font=font(22), fill="#C8CDDC")
-    rounded(d, (65, 1140, 1015, 1325), 28, WHITE)
-    d.text((100, 1175), "仓库文件", font=font(24, True), fill=INK)
-    text_block(d, (100, 1220), "thu-graduate-course-helper.user.js\nREADME.md  ·  test.cjs  ·  LICENSE", font(22), PURPLE_DARK, spacing=9)
-    d.text((65, 1370), "非官方工具 · 选课结果以学校系统为准", font=font(20), fill="#9DA5BA")
+        rounded(d, (65, yy, 1015, yy + 140), 18, "#24283B", outline="#393F58", width=2)
+        d.ellipse((100, yy + 58, 124, yy + 82), fill=PURPLE if i % 2 == 0 else ORANGE)
+        d.text((155, yy + 28), title, font=font(29, True), fill=WHITE)
+        d.text((155, yy + 80), sub, font=font(22), fill="#C8CDDC")
+    rounded(d, (65, 1135, 1015, 1325), 22, WHITE)
+    d.text((100, 1170), "主要文件", font=font(24, True), fill=INK)
+    text_block(d, (100, 1215), "thu-graduate-course-helper.user.js\nREADME.md  ·  test.cjs  ·  LICENSE", font(22), PURPLE_DARK, spacing=9)
     img.convert("RGB").save(XHS / "06-open-source.png", quality=95)
 
 
@@ -371,8 +350,6 @@ def operation_flow():
         if i < 3:
             d.line((x + 325, 460, x + 365, 460), fill="#B6BDCC", width=8)
             d.polygon(((x + 355, 445), (x + 380, 460), (x + 355, 475)), fill="#B6BDCC")
-    rounded(d, (70, 760, 1530, 835), 18, "#EFEAFF")
-    d.text((800, 797), "绿色状态点＝保活正常｜人数以学校最近一次统计时间为准｜脚本不会自动提交", font=font(22), fill=PURPLE_DARK, anchor="mm")
     img.convert("RGB").save(ASSETS / "operation-flow.png", quality=95)
 
 
@@ -380,13 +357,13 @@ def feature_overview():
     img = Image.new("RGBA", (1600, 900), "#F4F5FA")
     d = ImageDraw.Draw(img)
     d.text((65, 55), "从课程列表到可视化课程表", font=font(44, True), fill=INK)
-    d.text((67, 115), "真实功能结构示意（示例人数）", font=font(22), fill=MUTED)
+    d.text((67, 115), "课程时间、志愿人数和备注集中显示", font=font(22), fill=MUTED)
     shadow_panel(img, (55, 180, 1120, 840), 28, WHITE, 18, 8)
     draw_browser_mock(img, (80, 205, 1095, 815), dense=False)
     d = ImageDraw.Draw(img)
     features_data = [
         ("课程冲突", "按星期和大节排布"),
-        ("志愿结构", "总数 + 一二三志愿 + 优先"),
+        ("志愿结构", "总数 + 一二三志愿"),
         ("课程备注", "英语课方向清晰可见"),
         ("登录保活", "每 3 分钟轻量检查"),
         ("安全提交", "同步原表单，提交前确认"),
