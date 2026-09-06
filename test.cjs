@@ -8,6 +8,9 @@ const rawUrl = 'https://raw.githubusercontent.com/Delthin/thu-graduate-course-he
 assert.equal(source.match(/@version\s+(\S+)/)?.[1], packageVersion);
 assert.equal(source.match(/@downloadURL\s+(\S+)/)?.[1], rawUrl);
 assert.equal(source.match(/@updateURL\s+(\S+)/)?.[1], rawUrl);
+assert.match(source, /tm-probability-full/);
+assert.match(source, /tm-probability-partial/);
+assert.match(source, /tm-probability-zero/);
 
 const page = new JSDOM('<!doctype html><body></body>', {
   url: 'https://zhjwxk.cic.tsinghua.edu.cn/xkYjs.vxkYjsXkbBs.do?m=main',
@@ -16,7 +19,7 @@ const page = new JSDOM('<!doctype html><body></body>', {
 page.window.__THU_COURSE_HELPER_TEST__ = {};
 page.window.eval(source);
 const {
-  sessionPingUrl, sessionExpired, rememberTimetableOpen, enrolledDocReady, extractCourseRows, extractEnrolledRows, mergeCourseRows, prepareCacheTerm, cacheStats, getRecord, parseSchedule, weeksOverlap, markConflicts, parseStatsTable, statsResponseSignature, mergeStatsResults, nextStatsPage, collectStatsPages, wishBreakdown, wishStatuses, setCourseChecked, setCourseWish,
+  sessionPingUrl, sessionExpired, rememberTimetableOpen, enrolledDocReady, extractCourseRows, extractEnrolledRows, mergeCourseRows, prepareCacheTerm, cacheStats, getRecord, parseSchedule, weeksOverlap, markConflicts, parseStatsTable, statsResponseSignature, mergeStatsResults, nextStatsPage, collectStatsPages, wishBreakdown, wishProbabilities, setCourseChecked, setCourseWish,
 } = page.window.__THU_COURSE_HELPER_TEST__;
 
 assert.equal(
@@ -116,14 +119,16 @@ assert.equal(wishes.priority, 10);
 assert.equal(wishes.first, 5);
 assert.equal(wishes.second, 7);
 assert.equal(wishes.third, 9);
-const statusRecord = (capacity, degree = '(8)15,12,81') => ({ capacity, degree, nonDegree: '0,0,0' });
-assert.equal(JSON.stringify(wishStatuses(statusRecord(117))), JSON.stringify({ first: '保', second: '保', third: '保' }));
-assert.equal(JSON.stringify(wishStatuses(statusRecord(80))), JSON.stringify({ first: '保', second: '保', third: '冲' }));
-assert.equal(JSON.stringify(wishStatuses(statusRecord(35))), JSON.stringify({ first: '保', second: '冲', third: '满' }));
-assert.equal(JSON.stringify(wishStatuses(statusRecord(23))), JSON.stringify({ first: '冲', second: '满', third: '满' }));
-assert.equal(JSON.stringify(wishStatuses(statusRecord(8))), JSON.stringify({ first: '满', second: '满', third: '满' }));
-assert.equal(JSON.stringify(wishStatuses(statusRecord(0))), JSON.stringify({ first: '满', second: '满', third: '满' }));
-assert.equal(wishStatuses({ capacity: Number.NaN }), null);
+const probabilityRecord = (capacity, degree = '(8)15,12,81') => ({ capacity, degree, nonDegree: '0,0,0' });
+assert.equal(JSON.stringify(wishProbabilities(probabilityRecord(117))), JSON.stringify({ first: 100, second: 100, third: 100 }));
+assert.equal(JSON.stringify(wishProbabilities(probabilityRecord(80))), JSON.stringify({ first: 100, second: 100, third: 55 }));
+assert.equal(JSON.stringify(wishProbabilities(probabilityRecord(35))), JSON.stringify({ first: 100, second: 92, third: 0 }));
+assert.equal(JSON.stringify(wishProbabilities(probabilityRecord(23))), JSON.stringify({ first: 94, second: 0, third: 0 }));
+assert.equal(JSON.stringify(wishProbabilities(probabilityRecord(8))), JSON.stringify({ first: 0, second: 0, third: 0 }));
+assert.equal(JSON.stringify(wishProbabilities(probabilityRecord(0))), JSON.stringify({ first: 0, second: 0, third: 0 }));
+assert.equal(wishProbabilities(probabilityRecord(1, '999,0,0')).first, 1);
+assert.equal(wishProbabilities(probabilityRecord(999, '999,0,0')).first, 99);
+assert.equal(wishProbabilities({ capacity: Number.NaN }), null);
 const beforeStats = statsResponseSignature(stats.window.document);
 stats.window.document.querySelectorAll('tr')[2].cells[5].textContent = '9';
 assert.notEqual(statsResponseSignature(stats.window.document), beforeStats);

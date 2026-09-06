@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         清华研究生选课报名人数
 // @namespace    local.tsinghua.course-count
-// @version      0.5.1
+// @version      0.5.2
 // @description  用可视化课程表选择培养计划课程、设置志愿、显示报名人数并维持登录态
 // @homepageURL  https://github.com/Delthin/thu-graduate-course-helper
 // @supportURL   https://github.com/Delthin/thu-graduate-course-helper/issues
@@ -319,7 +319,7 @@
       .tm-card-head input { margin:1px 0 0;flex:0 0 auto; }.tm-card-title { overflow:hidden;font-size:12px;font-weight:700;white-space:nowrap;text-overflow:ellipsis; }.tm-card-state { flex:0 0 auto;padding:1px 4px;border-radius:3px;background:#4879ad;color:#fff;font-size:9px; }.tm-conflict-note { color:#8a3333;font-weight:700; }
       .tm-card select { max-width:76px;height:20px;padding:0;border:1px solid #aaa;border-radius:3px;background:#fff;font-size:10px; }
       .tm-meta { margin-top:2px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }.tm-note { color:#76520d; }.tm-count { font-weight:700; }.tm-count.tm-count-high { color:#c62828; }.tm-count.tm-count-mid { color:#a96200; }.tm-count.tm-count-low { color:#248a3d; }
-      .tm-wish-line { white-space:normal;overflow:visible;text-overflow:clip; }
+      .tm-wish-line { white-space:normal;overflow:visible;text-overflow:clip; }.tm-probability { font-weight:700; }.tm-probability-full { color:#248a3d; }.tm-probability-partial { color:#a96200; }.tm-probability-zero { color:#c62828; }
       .tm-unparsed { margin-top:5px;padding:7px;border:1px solid #ddd;border-radius:5px;background:#fff; }.tm-unparsed summary { cursor:pointer;font-weight:700; }.tm-unparsed p { margin:4px 0; }
       .tm-empty { grid-column:1/-1;color:#bbb;text-align:center;padding:17px 0; }
     `;
@@ -367,16 +367,27 @@
     };
   }
 
-  function wishStatuses(record) {
+  function wishProbabilities(record) {
     const capacity = Number(record?.capacity);
     if (!Number.isFinite(capacity) || capacity < 0) return null;
     const wishes = wishBreakdown(record);
-    const status = (higher, same) => higher >= capacity ? '满' : higher + same >= capacity ? '冲' : '保';
-    return {
-      first: status(wishes.priority, wishes.first),
-      second: status(wishes.priority + wishes.first, wishes.second),
-      third: status(wishes.priority + wishes.first + wishes.second, wishes.third),
+    const chance = (higher, same) => {
+      const remaining = capacity - higher;
+      const applicants = same + 1;
+      if (remaining <= 0) return 0;
+      if (remaining >= applicants) return 100;
+      return Math.max(1, Math.min(99, Math.round(remaining / applicants * 100)));
     };
+    return {
+      first: chance(wishes.priority, wishes.first),
+      second: chance(wishes.priority + wishes.first, wishes.second),
+      third: chance(wishes.priority + wishes.first + wishes.second, wishes.third),
+    };
+  }
+
+  function probabilityHtml(label, count, probability) {
+    const level = probability === 100 ? 'full' : probability === 0 ? 'zero' : 'partial';
+    return `${label}${count}（<span class="tm-probability tm-probability-${level}">${probability}%</span>）`;
   }
 
   function countInfo(course) {
@@ -388,15 +399,22 @@
     }
     const ratio = record.capacity > 0 ? record.total / record.capacity : 0;
     const wishes = wishBreakdown(record);
-    const statuses = wishStatuses(record);
+    const probabilities = wishProbabilities(record);
+    const parts = [
+      ['一', wishes.first, probabilities.first],
+      ['二', wishes.second, probabilities.second],
+      ['三', wishes.third, probabilities.third],
+    ];
+    if (wishes.priority) parts.push(['优', wishes.priority, 100]);
     return {
       text: `总${record.total}/${record.capacity}`,
-      detail: `一${wishes.first}（${statuses.first}） · 二${wishes.second}（${statuses.second}） · 三${wishes.third}（${statuses.third}）${wishes.priority ? ` · 优${wishes.priority}（必）` : ''}`,
-      rule: '保=新增本人后仍在容量内；冲=该志愿需要竞争；满=容量已被更高志愿占满',
+      detail: parts.map(([label, count, probability]) => `${label}${count}（${probability}%）`).join(' · '),
+      detailHtml: parts.map(part => probabilityHtml(...part)).join(' · '),
+      rule: '按当前人数估算并将你计为新增1人；同一志愿按等概率竞争。实际规则与后续人数变化可能影响结果',
       level: ratio >= 1 ? 'high' : ratio >= 0.8 ? 'mid' : 'low',
       ratio,
       wishes,
-      statuses,
+      probabilities,
     };
   }
 
@@ -606,7 +624,7 @@
       ${course.enrolled && course.wishLabel ? `<div class="tm-meta">${escapeHtml(course.wishLabel)}</div>` : ''}
       ${course.conflict ? '<div class="tm-meta tm-conflict-note">与已选定课程冲突，不可选</div>' : ''}
       <div class="tm-meta">${escapeHtml(course.credits)}学分 · <span class="tm-count tm-count-${count.level}">${escapeHtml(count.text)}</span></div>
-      <div class="tm-meta tm-wish-line">${escapeHtml(count.detail)}</div>
+      <div class="tm-meta tm-wish-line">${count.detailHtml || escapeHtml(count.detail)}</div>
     </div>`;
   }
 
@@ -823,7 +841,7 @@
 
   if (window.__THU_COURSE_HELPER_TEST__) {
     Object.assign(window.__THU_COURSE_HELPER_TEST__, {
-      sessionPingUrl, sessionExpired, rememberTimetableOpen, enrolledDocReady, extractCourseRows, extractEnrolledRows, mergeCourseRows, prepareCacheTerm, cacheStats, getRecord, parseSchedule, weeksOverlap, markConflicts, parseStatsTable, statsResponseSignature, mergeStatsResults, nextStatsPage, collectStatsPages, wishBreakdown, wishStatuses, setCourseChecked, setCourseWish,
+      sessionPingUrl, sessionExpired, rememberTimetableOpen, enrolledDocReady, extractCourseRows, extractEnrolledRows, mergeCourseRows, prepareCacheTerm, cacheStats, getRecord, parseSchedule, weeksOverlap, markConflicts, parseStatsTable, statsResponseSignature, mergeStatsResults, nextStatsPage, collectStatsPages, wishBreakdown, wishProbabilities, setCourseChecked, setCourseWish,
     });
     return;
   }
