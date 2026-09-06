@@ -16,7 +16,7 @@ const page = new JSDOM('<!doctype html><body></body>', {
 page.window.__THU_COURSE_HELPER_TEST__ = {};
 page.window.eval(source);
 const {
-  sessionPingUrl, sessionExpired, rememberTimetableOpen, enrolledDocReady, extractCourseRows, extractEnrolledRows, mergeCourseRows, prepareCacheTerm, cacheStats, getRecord, parseSchedule, weeksOverlap, markConflicts, parseStatsTable, statsResponseSignature, mergeStatsResults, nextStatsPage, collectStatsPages, wishBreakdown, setCourseChecked, setCourseWish,
+  sessionPingUrl, sessionExpired, rememberTimetableOpen, enrolledDocReady, extractCourseRows, extractEnrolledRows, mergeCourseRows, prepareCacheTerm, cacheStats, getRecord, parseSchedule, weeksOverlap, markConflicts, parseStatsTable, statsResponseSignature, mergeStatsResults, nextStatsPage, collectStatsPages, wishBreakdown, wishAdvice, setCourseChecked, setCourseWish,
 } = page.window.__THU_COURSE_HELPER_TEST__;
 
 assert.equal(
@@ -116,6 +116,13 @@ assert.equal(wishes.priority, 10);
 assert.equal(wishes.first, 5);
 assert.equal(wishes.second, 7);
 assert.equal(wishes.third, 9);
+const adviceRecord = (capacity, degree = '(8)15,12,81') => ({ capacity, degree, nonDegree: '0,0,0' });
+assert.equal(wishAdvice(adviceRecord(117)).text, '三志愿可保');
+assert.equal(wishAdvice(adviceRecord(80)).text, '二志愿可保');
+assert.equal(wishAdvice(adviceRecord(35)).text, '一志愿可保');
+assert.equal(wishAdvice(adviceRecord(23)).text, '一志愿需冲');
+assert.equal(wishAdvice(adviceRecord(8)).text, '普通志愿已满');
+assert.equal(wishAdvice({ capacity: Number.NaN }), null);
 const beforeStats = statsResponseSignature(stats.window.document);
 stats.window.document.querySelectorAll('tr')[2].cells[5].textContent = '9';
 assert.notEqual(statsResponseSignature(stats.window.document), beforeStats);
