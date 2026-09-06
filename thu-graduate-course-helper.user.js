@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         清华研究生选课报名人数
 // @namespace    local.tsinghua.course-count
-// @version      0.5.0
+// @version      0.5.1
 // @description  用可视化课程表选择培养计划课程、设置志愿、显示报名人数并维持登录态
 // @homepageURL  https://github.com/Delthin/thu-graduate-course-helper
 // @supportURL   https://github.com/Delthin/thu-graduate-course-helper/issues
@@ -319,7 +319,7 @@
       .tm-card-head input { margin:1px 0 0;flex:0 0 auto; }.tm-card-title { overflow:hidden;font-size:12px;font-weight:700;white-space:nowrap;text-overflow:ellipsis; }.tm-card-state { flex:0 0 auto;padding:1px 4px;border-radius:3px;background:#4879ad;color:#fff;font-size:9px; }.tm-conflict-note { color:#8a3333;font-weight:700; }
       .tm-card select { max-width:76px;height:20px;padding:0;border:1px solid #aaa;border-radius:3px;background:#fff;font-size:10px; }
       .tm-meta { margin-top:2px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }.tm-note { color:#76520d; }.tm-count { font-weight:700; }.tm-count.tm-count-high { color:#c62828; }.tm-count.tm-count-mid { color:#a96200; }.tm-count.tm-count-low { color:#248a3d; }
-      .tm-wish-advice { display:inline-block;padding:1px 4px;border-radius:3px;font-weight:700; }.tm-wish-advice-safe { background:#e4f5e9;color:#248a3d; }.tm-wish-advice-risk { background:#fff0dc;color:#a96200; }.tm-wish-advice-none { background:#f2e5e5;color:#a33; }
+      .tm-wish-line { white-space:normal;overflow:visible;text-overflow:clip; }
       .tm-unparsed { margin-top:5px;padding:7px;border:1px solid #ddd;border-radius:5px;background:#fff; }.tm-unparsed summary { cursor:pointer;font-weight:700; }.tm-unparsed p { margin:4px 0; }
       .tm-empty { grid-column:1/-1;color:#bbb;text-align:center;padding:17px 0; }
     `;
@@ -367,19 +367,16 @@
     };
   }
 
-  function wishAdvice(record) {
+  function wishStatuses(record) {
     const capacity = Number(record?.capacity);
-    if (!Number.isFinite(capacity) || capacity <= 0) return null;
+    if (!Number.isFinite(capacity) || capacity < 0) return null;
     const wishes = wishBreakdown(record);
-    const first = wishes.priority + wishes.first;
-    const second = first + wishes.second;
-    const third = second + wishes.third;
-    const title = '按当前统计估算：优先志愿先录取，再按一、二、三志愿依次录取；已将你按新增 1 人计算';
-    if (wishes.priority >= capacity) return { text: '普通志愿已满', level: 'none', title };
-    if (first >= capacity) return { text: '一志愿需冲', level: 'risk', title };
-    if (second >= capacity) return { text: '一志愿可保', level: 'safe', title };
-    if (third >= capacity) return { text: '二志愿可保', level: 'safe', title };
-    return { text: '三志愿可保', level: 'safe', title };
+    const status = (higher, same) => higher >= capacity ? '满' : higher + same >= capacity ? '冲' : '保';
+    return {
+      first: status(wishes.priority, wishes.first),
+      second: status(wishes.priority + wishes.first, wishes.second),
+      third: status(wishes.priority + wishes.first + wishes.second, wishes.third),
+    };
   }
 
   function countInfo(course) {
@@ -391,13 +388,15 @@
     }
     const ratio = record.capacity > 0 ? record.total / record.capacity : 0;
     const wishes = wishBreakdown(record);
+    const statuses = wishStatuses(record);
     return {
       text: `总${record.total}/${record.capacity}`,
-      detail: `一${wishes.first} · 二${wishes.second} · 三${wishes.third}${wishes.priority ? ` · 优${wishes.priority}` : ''}`,
+      detail: `一${wishes.first}（${statuses.first}） · 二${wishes.second}（${statuses.second}） · 三${wishes.third}（${statuses.third}）${wishes.priority ? ` · 优${wishes.priority}（必）` : ''}`,
+      rule: '保=新增本人后仍在容量内；冲=该志愿需要竞争；满=容量已被更高志愿占满',
       level: ratio >= 1 ? 'high' : ratio >= 0.8 ? 'mid' : 'low',
       ratio,
       wishes,
-      advice: wishAdvice(record),
+      statuses,
     };
   }
 
@@ -596,7 +595,7 @@
     const count = countInfo(course);
     const disabled = course.unavailable || course.conflict ? 'disabled' : '';
     const status = course.enrolled ? '已选定' : course.conflict ? '与已选定课程时间冲突' : '';
-    const title = [status, course.schedule, course.note, count.detail, count.advice?.title].filter(Boolean).join('\n');
+    const title = [status, course.schedule, course.note, count.detail, count.rule].filter(Boolean).join('\n');
     return `<div class="tm-card ${course.selected ? 'tm-selected' : ''} ${course.enrolled ? 'tm-enrolled' : ''} ${course.conflict ? 'tm-conflict' : ''} ${count.level === 'high' ? 'tm-over' : ''}" data-key="${course.key}" style="--tm-color:${colorFor(course.name)}" title="${escapeHtml(title)}">
       <div class="tm-card-head">
         <label>${course.enrolled ? '<span class="tm-card-state">已选定</span>' : `<input data-pick type="checkbox" ${course.selected ? 'checked' : ''} ${disabled}`}><span class="tm-card-title">${escapeHtml(course.name)}</span></label>
@@ -607,7 +606,7 @@
       ${course.enrolled && course.wishLabel ? `<div class="tm-meta">${escapeHtml(course.wishLabel)}</div>` : ''}
       ${course.conflict ? '<div class="tm-meta tm-conflict-note">与已选定课程冲突，不可选</div>' : ''}
       <div class="tm-meta">${escapeHtml(course.credits)}学分 · <span class="tm-count tm-count-${count.level}">${escapeHtml(count.text)}</span></div>
-      <div class="tm-meta">${escapeHtml(count.detail)}${count.advice ? ` · <span class="tm-wish-advice tm-wish-advice-${count.advice.level}" title="${escapeHtml(count.advice.title)}">${escapeHtml(count.advice.text)}</span>` : ''}</div>
+      <div class="tm-meta tm-wish-line">${escapeHtml(count.detail)}</div>
     </div>`;
   }
 
@@ -824,7 +823,7 @@
 
   if (window.__THU_COURSE_HELPER_TEST__) {
     Object.assign(window.__THU_COURSE_HELPER_TEST__, {
-      sessionPingUrl, sessionExpired, rememberTimetableOpen, enrolledDocReady, extractCourseRows, extractEnrolledRows, mergeCourseRows, prepareCacheTerm, cacheStats, getRecord, parseSchedule, weeksOverlap, markConflicts, parseStatsTable, statsResponseSignature, mergeStatsResults, nextStatsPage, collectStatsPages, wishBreakdown, wishAdvice, setCourseChecked, setCourseWish,
+      sessionPingUrl, sessionExpired, rememberTimetableOpen, enrolledDocReady, extractCourseRows, extractEnrolledRows, mergeCourseRows, prepareCacheTerm, cacheStats, getRecord, parseSchedule, weeksOverlap, markConflicts, parseStatsTable, statsResponseSignature, mergeStatsResults, nextStatsPage, collectStatsPages, wishBreakdown, wishStatuses, setCourseChecked, setCourseWish,
     });
     return;
   }
