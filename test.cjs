@@ -19,7 +19,7 @@ const page = new JSDOM('<!doctype html><body></body>', {
 page.window.__THU_COURSE_HELPER_TEST__ = {};
 page.window.eval(source);
 const {
-  sessionPingUrl, sessionExpired, rememberTimetableOpen, enrolledDocReady, extractCourseRows, extractEnrolledRows, mergeCourseRows, prepareCacheTerm, cacheStats, getRecord, parseSchedule, weeksOverlap, markConflicts, parseStatsTable, statsResponseSignature, mergeStatsResults, nextStatsPage, collectStatsPages, wishBreakdown, wishProbabilities, parseRecommendationTable, recommendationMetrics, setCourseChecked, setCourseWish,
+  sessionPingUrl, sessionExpired, parseStatsTime, rememberTimetableOpen, enrolledDocReady, extractCourseRows, extractEnrolledRows, mergeCourseRows, prepareCacheTerm, cacheStats, getRecord, parseSchedule, weeksOverlap, markConflicts, parseStatsTable, statsResponseSignature, mergeStatsResults, nextStatsPage, collectStatsPages, wishBreakdown, wishProbabilities, parseRecommendationTable, recommendationMetrics, recommendationInfo, setCourseChecked, setCourseWish,
 } = page.window.__THU_COURSE_HELPER_TEST__;
 
 assert.equal(
@@ -30,6 +30,8 @@ const ping = new URL(sessionPingUrl('2026-2027-1', 'test'));
 assert.equal(ping.searchParams.get('m'), 'showTree');
 assert.equal(ping.searchParams.get('p_xnxq'), '2026-2027-1');
 assert.equal(ping.searchParams.get('_tm_keepalive'), 'test');
+assert.equal(parseStatsTime('2026年09月07日20时00分'), new Date(2026, 8, 7, 20, 0).getTime());
+assert.equal(parseStatsTime(''), 0);
 assert.equal(sessionExpired('用户登陆超时或访问内容不存在。'), true);
 assert.equal(sessionExpired('研究生选课系统'), false);
 rememberTimetableOpen(true);
@@ -42,6 +44,20 @@ prepareCacheTerm('2026-2027-1');
 assert.equal(getRecord({ code: '00999999', section: '0' }).total, 7);
 prepareCacheTerm('2027-2028-1');
 assert.equal(getRecord({ code: '00999999', section: '0' }), null);
+page.window.localStorage.setItem('thu-course-helper-count-cache-v1', JSON.stringify({
+  term: '2028-2029-1', updatedAt: '2028年09月01日16时00分', nextAt: '2028年09月01日20时00分',
+  expiresAt: Date.now() + 60_000, entries: [['00888888', { sections: [['0', { total: 12 }]] }]],
+}));
+page.window.localStorage.setItem('thu-course-helper-recommendation-cache-v1', JSON.stringify({
+  term: '2028-2029-1', entries: [
+    ['course:缓存课', { records: [{ department: '测试院系', teacher: '缓存教师', code: '00888888', name: '缓存课', counts: [0, 0, 0, 0, 0, 1, 9] }] }],
+    ['course:无结果课程', { records: [] }],
+  ],
+}));
+prepareCacheTerm('2028-2029-1');
+assert.equal(getRecord({ code: '00888888', section: '0' }).total, 12);
+assert.match(recommendationInfo({ name: '缓存课', teacher: '缓存教师', code: '00888888' }).text, /推荐 100\.0%/);
+assert.equal(recommendationInfo({ name: '无结果课程', teacher: '未知教师', code: '00000000' }), null);
 
 const selection = new JSDOM(`<!doctype html><body><form>
 <input id="p_kch"><button>提交</button><table>
@@ -74,6 +90,7 @@ assert.equal(enrolledCourses[0].enrolled, true);
 assert.equal(enrolledCourses[0].wishLabel, '第三志愿');
 const mergedCourses = markConflicts(mergeCourseRows(selection.window.document, enrolled.window.document));
 assert.equal(mergedCourses.find(course => course.key === '00000001-0').enrolled, true);
+assert.equal(mergedCourses.find(course => course.key === '00000001-1').conflictReason, '同一课程已有已选课序');
 assert.equal(mergedCourses.find(course => course.key === '00000002-0').conflict, true);
 assert.equal(mergedCourses.find(course => course.key === '00000003-0').conflict, false);
 const loadingEnrolled = new JSDOM('<!doctype html><body></body>', { url: enrolled.window.location.href });
@@ -85,7 +102,7 @@ assert.equal(mergeCourseRows(selection.window.document, emptyEnrolled.window.doc
 assert.equal(weeksOverlap('前八周', '后八周'), false);
 assert.equal(weeksOverlap('全周', '后八周'), true);
 
-const stats = new JSDOM(`<!doctype html><body>填报志愿统计时间： 2026年09月03日20时00分
+const stats = new JSDOM(`<!doctype html><body>填报志愿统计时间： 2026年09月03日20时00分 下次统计时间： 2026年09月04日00时00分
 <form method="post" action="/xkYjs.xkYjsZytjb.do?m=tbzySearchXw&p_xnxq=2026-2027-1">
 <input name="p_kch"><input name="p_kcm"><button name="query" value="查询">查询</button>
 <table><tr><td><table><tr><td>课程号</td><td>课序号</td><td>课程名</td><td>开课系</td><td>可选容量</td><td>报名总人数 排序</td><td>学位课报名人数</td><td>非学位课报名人数</td></tr></table>
@@ -93,6 +110,8 @@ const stats = new JSDOM(`<!doctype html><body>填报志愿统计时间： 2026�
 const result = parseStatsTable(stats.window.document, '00000001');
 assert.equal(result.sections.get('0').total, 8);
 assert.equal(result.sections.get('0').capacity, 50);
+assert.equal(result.updatedAt, '2026年09月03日20时00分');
+assert.equal(result.nextAt, '2026年09月04日00时00分');
 const statsPage2 = new JSDOM(`<!doctype html><body><table>
 <tr><td>课程号</td><td>课序号</td><td>课程名</td><td>开课系</td><td>可选容量</td><td>报名总人数</td><td>学位课报名人数</td><td>非学位课报名人数</td></tr>
 <tr><td>00000001</td><td>50</td><td>示例公共课</td><td>公共课教学单位</td><td>50</td><td>9</td><td>1,2,3</td><td>0,1,2</td></tr>
