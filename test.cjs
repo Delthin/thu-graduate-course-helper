@@ -19,7 +19,7 @@ const page = new JSDOM('<!doctype html><body></body>', {
 page.window.__THU_COURSE_HELPER_TEST__ = {};
 page.window.eval(source);
 const {
-  sessionPingUrl, sessionExpired, rememberTimetableOpen, enrolledDocReady, extractCourseRows, extractEnrolledRows, mergeCourseRows, prepareCacheTerm, cacheStats, getRecord, parseSchedule, weeksOverlap, markConflicts, parseStatsTable, statsResponseSignature, mergeStatsResults, nextStatsPage, collectStatsPages, wishBreakdown, wishProbabilities, setCourseChecked, setCourseWish,
+  sessionPingUrl, sessionExpired, rememberTimetableOpen, enrolledDocReady, extractCourseRows, extractEnrolledRows, mergeCourseRows, prepareCacheTerm, cacheStats, getRecord, parseSchedule, weeksOverlap, markConflicts, parseStatsTable, statsResponseSignature, mergeStatsResults, nextStatsPage, collectStatsPages, wishBreakdown, wishProbabilities, parseRecommendationTable, recommendationMetrics, setCourseChecked, setCourseWish,
 } = page.window.__THU_COURSE_HELPER_TEST__;
 
 assert.equal(
@@ -129,6 +129,21 @@ assert.equal(JSON.stringify(wishProbabilities(probabilityRecord(0))), JSON.strin
 assert.equal(wishProbabilities(probabilityRecord(1, '999,0,0')).first, 1);
 assert.equal(wishProbabilities(probabilityRecord(999, '999,0,0')).first, 99);
 assert.equal(wishProbabilities({ capacity: Number.NaN }), null);
+
+const recommendations = new JSDOM(`<!doctype html><body><table><tr><td><table>
+<tr><th>开课院系</th><th>教师名</th><th>课程号</th><th>课程名</th><th>分数1</th><th>分数2</th><th>分数3</th><th>分数4</th><th>分数5</th><th>分数6</th><th>分数7</th></tr>
+<tr><td>马克思主义学院</td><td>肖广岭</td><td>60680021</td><td>自然辩证法概论</td><td>1</td><td>0</td><td>3</td><td>6</td><td>16</td><td>51</td><td>206</td></tr>
+<tr><td>马克思主义学院</td><td>朱安东</td><td>60680021</td><td>自然辩证法概论</td><td>0</td><td>0</td><td>1</td><td>3</td><td>5</td><td>36</td><td>164</td></tr>
+</table></td></tr></table></body>`);
+const recommendationRows = parseRecommendationTable(recommendations.window.document);
+assert.equal(recommendationRows.length, 2);
+assert.equal(recommendationRows[0].teacher, '肖广岭');
+assert.equal(JSON.stringify(recommendationRows[0].counts), JSON.stringify([1, 0, 3, 6, 16, 51, 206]));
+const recommendation = recommendationMetrics([recommendationRows[0]]);
+assert.equal(recommendation.total, 283);
+assert.equal(recommendation.rate.toFixed(2), '90.81');
+assert.equal(recommendation.strictRate.toFixed(2), '72.79');
+assert.equal(recommendation.value.toFixed(1), '93.0');
 const beforeStats = statsResponseSignature(stats.window.document);
 stats.window.document.querySelectorAll('tr')[2].cells[5].textContent = '9';
 assert.notEqual(statsResponseSignature(stats.window.document), beforeStats);

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         清华研究生选课报名人数
 // @namespace    local.tsinghua.course-count
-// @version      0.5.2
+// @version      0.5.6
 // @description  用可视化课程表选择培养计划课程、设置志愿、显示报名人数并维持登录态
 // @homepageURL  https://github.com/Delthin/thu-graduate-course-helper
 // @supportURL   https://github.com/Delthin/thu-graduate-course-helper/issues
@@ -21,6 +21,7 @@
   const REFRESH_MS = 15 * 60 * 1000;
   const KEEPALIVE_MS = 3 * 60 * 1000;
   const STATS_PATH = '/xkYjs.vxkYjsXkbBs.do?m=xkqkSearch&p_xnxq=';
+  const RECOMMENDATION_PATH = '/xkBks.xgpg_xspjyxkt.do?cm=xgpg_qbkcmycdzbShow&p_xnxq=';
   const TIMETABLE_OPEN_KEY = 'thu-course-helper-timetable-open';
   const DAYS = ['星期一', '星期二', '星期三', '星期四', '星期五'];
   const SLOTS = [
@@ -32,12 +33,12 @@
     selectionDoc: null,
     observer: null,
     panel: null,
-    statsFrame: null,
-    term: null,
     cache: new Map(),
+    recommendationCache: new Map(),
     cacheTerm: null,
     enrolledCache: [],
     loading: false,
+    loadingRecommendations: false,
     keepingAlive: false,
     scanTimer: null,
     timetableOpen: false,
@@ -45,6 +46,7 @@
     showRestricted: false,
     showAlternatives: false,
     countStatus: '准备中…',
+    recommendationStatus: '推荐准备中…',
   };
   try {
     state.timetableOpen = sessionStorage.getItem(TIMETABLE_OPEN_KEY) === '1';
@@ -319,7 +321,7 @@
       .tm-card-head input { margin:1px 0 0;flex:0 0 auto; }.tm-card-title { overflow:hidden;font-size:12px;font-weight:700;white-space:nowrap;text-overflow:ellipsis; }.tm-card-state { flex:0 0 auto;padding:1px 4px;border-radius:3px;background:#4879ad;color:#fff;font-size:9px; }.tm-conflict-note { color:#8a3333;font-weight:700; }
       .tm-card select { max-width:76px;height:20px;padding:0;border:1px solid #aaa;border-radius:3px;background:#fff;font-size:10px; }
       .tm-meta { margin-top:2px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }.tm-note { color:#76520d; }.tm-count { font-weight:700; }.tm-count.tm-count-high { color:#c62828; }.tm-count.tm-count-mid { color:#a96200; }.tm-count.tm-count-low { color:#248a3d; }
-      .tm-wish-line { white-space:normal;overflow:visible;text-overflow:clip; }.tm-probability { font-weight:700; }.tm-probability-full { color:#248a3d; }.tm-probability-partial { color:#a96200; }.tm-probability-zero { color:#c62828; }
+      .tm-wish-line { white-space:normal;overflow:visible;text-overflow:clip; }.tm-probability { font-weight:700; }.tm-probability-full { color:#248a3d; }.tm-probability-partial { color:#a96200; }.tm-probability-zero { color:#c62828; }.tm-recommendation { color:#5d3d9b;white-space:normal;overflow:visible;text-overflow:clip; }.tm-recommendation strong { color:#2d9348; }
       .tm-unparsed { margin-top:5px;padding:7px;border:1px solid #ddd;border-radius:5px;background:#fff; }.tm-unparsed summary { cursor:pointer;font-weight:700; }.tm-unparsed p { margin:4px 0; }
       .tm-empty { grid-column:1/-1;color:#bbb;text-align:center;padding:17px 0; }
     `;
@@ -329,6 +331,7 @@
   function prepareCacheTerm(term) {
     if (state.cacheTerm && state.cacheTerm !== term) {
       state.cache.clear();
+      state.recommendationCache.clear();
       state.enrolledCache = [];
       state.countStatus = '准备中…';
     }
@@ -418,12 +421,217 @@
     };
   }
 
-  function setPanel(status, disabled = false) {
+  function recommendationKey(course) {
+    return `course:${course.name}`;
+  }
+
+  function teacherRecommendationKey(teacher) {
+    return `teacher:${teacher}`;
+  }
+
+  function parseRecommendationTable(doc) {
+    const rows = [...doc.querySelectorAll('tr')];
+    const required = ['教师名', '课程号', '课程名', '分数1', '分数2', '分数3', '分数4', '分数5', '分数6', '分数7'];
+    const header = rows.find(row => {
+      const cells = [...row.cells].map(cell => clean(cell.textContent));
+      return cells.length >= required.length + 1 && required.every(title => cells.some(text => text.includes(title)));
+    });
+    if (!header) return [];
+    const headers = [...header.cells].map(cell => clean(cell.textContent));
+    const index = title => headers.findIndex(text => text.includes(title));
+    const indexes = { department: index('开课院系'), teacher: index('教师名'), code: index('课程号'), name: index('课程名') };
+    const scores = [1, 2, 3, 4, 5, 6, 7].map(score => index(`分数${score}`));
+    if ([indexes.department, indexes.teacher, indexes.code, indexes.name, ...scores].some(value => value < 0)) return [];
+    return rows.flatMap(row => {
+      const cells = [...row.cells].map(cell => clean(cell.textContent));
+      const counts = scores.map(position => Number.parseInt(cells[position], 10));
+      if (!cells[indexes.teacher] || counts.some(value => !Number.isFinite(value))) return [];
+      return [{ department: cells[indexes.department], teacher: cells[indexes.teacher], code: cells[indexes.code], name: cells[indexes.name], counts }];
+    });
+  }
+
+  function recommendationMetrics(records) {
+    const counts = [0, 0, 0, 0, 0, 0, 0];
+    for (const record of records) record.counts.forEach((value, index) => { counts[index] += value; });
+    const total = counts.reduce((sum, value) => sum + value, 0);
+    if (!total) return null;
+    const mean = counts.reduce((sum, value, index) => sum + value * (index + 1), 0) / total;
+    return {
+      total,
+      strictRate: counts[6] / total * 100,
+      rate: (counts[5] + counts[6]) / total * 100,
+      value: (mean - 1) / 6 * 100,
+    };
+  }
+
+  function normalizeCourseName(value) {
+    return clean(value).replace(/[\s\-—_（）()《》【】、，,.。]/g, '');
+  }
+
+  function recommendationInfo(course) {
+    let cached = state.recommendationCache.get(recommendationKey(course));
+    if (!cached) return null;
+    if (cached.error) return { text: '历史推荐查询失败', detail: cached.error };
+    let source = 'course';
+    let teacherRows = course.teacher ? cached.records.filter(record => record.teacher === course.teacher) : cached.records;
+    if (course.teacher && !teacherRows.length) {
+      const teacherCached = state.recommendationCache.get(teacherRecommendationKey(course.teacher));
+      if (!teacherCached) return null;
+      cached = teacherCached;
+      source = 'teacher';
+      teacherRows = cached.records.filter(record => record.teacher === course.teacher);
+    }
+    if (cached.error) return { text: '历史推荐查询失败', detail: cached.error };
+    const codeRows = teacherRows.filter(record => record.code === course.code);
+    const name = normalizeCourseName(course.name);
+    const nameRows = teacherRows.filter(record => name && normalizeCourseName(record.name) === name);
+    const rows = codeRows.length ? codeRows : nameRows.length ? nameRows : teacherRows;
+    const metrics = recommendationMetrics(rows);
+    if (!metrics) return { text: '暂无历史推荐', detail: '未找到可用的上一学年评教统计' };
+    const departments = new Set(rows.map(record => record.department).filter(Boolean));
+    const scope = source === 'teacher' ? '教师历史' : codeRows.length ? (departments.size > 1 ? '同课程跨院系' : '同课程') : '同名课';
+    return {
+      text: `${scope}推荐 ${metrics.rate.toFixed(1)}%（${metrics.value.toFixed(1)}分，${metrics.total}人）`,
+      detail: `6-7分推荐率 ${metrics.rate.toFixed(1)}%；7分强推荐率 ${metrics.strictRate.toFixed(1)}%；加权推荐值 ${metrics.value.toFixed(1)}/100；样本 ${metrics.total} 人${departments.size > 1 ? `；合并 ${[...departments].join('、')}` : ''}`,
+    };
+  }
+
+  function createDataFrame(src, title) {
+    const hostDoc = state.selectionDoc || document;
+    const frame = hostDoc.createElement('iframe');
+    frame.title = title;
+    frame.src = src;
+    frame.style.cssText = 'position:fixed;left:-12000px;top:0;width:1000px;height:800px;border:0;pointer-events:none;';
+    hostDoc.body.appendChild(frame);
+    return frame;
+  }
+
+  function findRecommendationDoc(frameWindow) {
+    return allDocs(frameWindow).find(doc => {
+      const text = clean(doc.body?.textContent || '');
+      return text.includes('选课学生推荐度') && text.includes('分数7');
+    }) || null;
+  }
+
+  function recommendationResponseSignature(doc) {
+    return [...doc.querySelectorAll('tr')].map(row => clean(row.textContent)).join('|');
+  }
+
+  function setInputValue(input, value) {
+    input.value = value;
+    const EventCtor = input.ownerDocument.defaultView?.Event || Event;
+    input.dispatchEvent(new EventCtor('input', { bubbles: true }));
+    input.dispatchEvent(new EventCtor('change', { bubbles: true }));
+  }
+
+  async function queryRecommendation(frame, filter) {
+    const recommendationDoc = findRecommendationDoc(frame.contentWindow);
+    if (!recommendationDoc) throw new Error('历史推荐页未加载');
+    const inputs = visibleTextInputs(recommendationDoc).slice(0, 3);
+    const button = [...recommendationDoc.querySelectorAll('button,input')].find(element => clean(element.textContent || element.value) === '查询');
+    if (inputs.length < 3 || !button) throw new Error('无法识别历史推荐查询控件');
+    const before = recommendationResponseSignature(recommendationDoc);
+    setInputValue(inputs[0], filter.teacher || '');
+    setInputValue(inputs[1], '');
+    setInputValue(inputs[2], filter.name || '');
+    button.click();
+    const result = await waitFor(() => {
+      const currentDoc = findRecommendationDoc(frame.contentWindow);
+      if (!currentDoc) return null;
+      const text = clean(currentDoc.body?.textContent || '');
+      if (sessionExpired(text)) return { error: '登录状态失效' };
+      const changed = recommendationResponseSignature(currentDoc) !== before;
+      const rows = parseRecommendationTable(currentDoc);
+      if (changed && (rows.length || /Displaying\s+0|没有记录/.test(text))) return { rows };
+      return null;
+    }, 20000);
+    if (!result) throw new Error('历史推荐查询超时');
+    if (result.error) throw new Error(result.error);
+    return result.rows;
+  }
+
+  async function refreshRecommendations(doc, courses) {
+    if (state.loadingRecommendations) return;
+    const courseCandidates = [...new Map(courses.filter(course => course.name).map(course => [recommendationKey(course), course])).entries()]
+      .filter(([key]) => !state.recommendationCache.has(key));
+    const needsTeacherFallback = courses.some(course => {
+      const cached = state.recommendationCache.get(recommendationKey(course));
+      return course.teacher && cached && !cached.records?.some(record => record.teacher === course.teacher)
+        && !state.recommendationCache.has(teacherRecommendationKey(course.teacher));
+    });
+    if (!courseCandidates.length && !needsTeacherFallback) return;
+
+    state.loadingRecommendations = true;
+    const term = getTerm(doc);
+    const frame = createDataFrame(`${location.origin}${RECOMMENDATION_PATH}${encodeURIComponent(term)}&p_xslb=yjs`, '历史推荐数据');
+    let finalStatus = '推荐查询完成';
+    try {
+      setRecommendationPanel(`推荐 0/${courseCandidates.length}…`);
+      if (!await waitFor(() => findRecommendationDoc(frame.contentWindow))) throw new Error('历史推荐页未加载');
+
+      let done = 0;
+      for (const [key, course] of courseCandidates) {
+        try {
+          state.recommendationCache.set(key, { records: await queryRecommendation(frame, { name: course.name }) });
+        } catch (error) {
+          state.recommendationCache.set(key, { error: error.message, records: [] });
+        }
+        done += 1;
+        setRecommendationPanel(`推荐 ${done}/${courseCandidates.length}…`);
+        invalidateTimetable(doc);
+        if (state.timetableOpen) renderTimetable(doc);
+      }
+
+      const teacherCandidates = [...new Map(courses.filter(course => {
+        if (!course.teacher) return false;
+        const cached = state.recommendationCache.get(recommendationKey(course));
+        return !cached?.records?.some(record => record.teacher === course.teacher)
+          && !state.recommendationCache.has(teacherRecommendationKey(course.teacher));
+      }).map(course => [teacherRecommendationKey(course.teacher), course.teacher])).entries()];
+      done = 0;
+      for (const [key, teacher] of teacherCandidates) {
+        setRecommendationPanel(`改名回查 ${done}/${teacherCandidates.length}…`);
+        try {
+          state.recommendationCache.set(key, { records: await queryRecommendation(frame, { teacher }) });
+        } catch (error) {
+          state.recommendationCache.set(key, { error: error.message, records: [] });
+        }
+        done += 1;
+        invalidateTimetable(doc);
+        if (state.timetableOpen) renderTimetable(doc);
+      }
+
+      const results = courses.map(course => recommendationInfo(course));
+      const found = results.filter(result => result && !/暂无|失败/.test(result.text)).length;
+      const missing = results.filter(result => result?.text.includes('暂无')).length;
+      const errors = [...state.recommendationCache.values()].filter(result => result.error);
+      finalStatus = `推荐 ${found}/${courses.length}${missing ? ` · 无${missing}` : ''}${errors.length ? ` · 失败${errors.length}:${errors[0].error}` : ''}`;
+    } catch (error) {
+      finalStatus = `推荐查询失败：${error.message}`;
+    } finally {
+      frame.remove();
+      state.loadingRecommendations = false;
+      setRecommendationPanel(finalStatus);
+    }
+  }
+
+  function updateRefreshButton() {
+    const button = state.selectionDoc?.querySelector('#tm-timetable [data-refresh]');
+    if (button) button.disabled = state.loading || state.loadingRecommendations;
+  }
+
+  function setRecommendationPanel(status) {
+    state.recommendationStatus = status;
+    const modal = state.selectionDoc?.getElementById('tm-timetable');
+    if (modal) modal.querySelector('[data-recommendation-status]').textContent = status;
+    updateRefreshButton();
+  }
+
+  function setPanel(status) {
     state.countStatus = status;
     const modal = state.selectionDoc?.getElementById('tm-timetable');
-    if (!modal) return;
-    modal.querySelector('[data-status]').textContent = status;
-    modal.querySelector('[data-refresh]').disabled = disabled;
+    if (modal) modal.querySelector('[data-status]').textContent = status;
+    updateRefreshButton();
   }
 
   function findStatsDoc(frameWindow) {
@@ -480,20 +688,6 @@
     );
   }
 
-  function ensureStatsFrame(term) {
-    if (state.statsFrame && state.term === term) return state.statsFrame;
-    state.statsFrame?.remove();
-    const hostDoc = state.selectionDoc || document;
-    const frame = hostDoc.createElement('iframe');
-    frame.title = '报名统计数据';
-    frame.src = `${location.origin}${STATS_PATH}${encodeURIComponent(term)}`;
-    frame.style.cssText = 'position:fixed;left:-12000px;top:0;width:1000px;height:800px;border:0;pointer-events:none;';
-    hostDoc.body.appendChild(frame);
-    state.statsFrame = frame;
-    state.term = term;
-    return frame;
-  }
-
   function statsResponseSignature(doc) {
     const rows = [...doc.querySelectorAll('tr')].map(row => clean(row.textContent)).join('|');
     return `${rows}|${clean(doc.body?.textContent || '').includes('没有记录')}`;
@@ -534,9 +728,8 @@
     return result;
   }
 
-  async function queryCode(code, term) {
-    const frame = ensureStatsFrame(term);
-    const statsDoc = await waitFor(() => findStatsDoc(frame.contentWindow));
+  async function queryCode(frame, code) {
+    const statsDoc = findStatsDoc(frame.contentWindow);
     if (!statsDoc) throw new Error('统计页未加载');
 
     const input = visibleTextInputs(statsDoc)[0];
@@ -545,10 +738,7 @@
 
     const beforeDoc = statsDoc;
     const beforeSignature = statsResponseSignature(statsDoc);
-    input.value = code;
-    const EventCtor = statsDoc.defaultView?.Event || Event;
-    input.dispatchEvent(new EventCtor('input', { bubbles: true }));
-    input.dispatchEvent(new EventCtor('change', { bubbles: true }));
+    setInputValue(input, code);
     button.click();
 
     const result = await waitFor(() => {
@@ -576,24 +766,35 @@
     if (state.loading || !codes.length) return;
     state.loading = true;
     const term = getTerm(doc);
-    let done = 0;
-    let updatedAt = '';
-    setPanel(`人数 0/${codes.length}…`, true);
-    for (const code of codes) {
-      try {
-        const result = await queryCode(code, term);
-        cacheStats(code, { sections: result.sections, empty: result.empty });
-        updatedAt ||= result.updatedAt;
-      } catch (error) {
-        cacheStats(code, { error: error.message, sections: new Map() });
+    const frame = createDataFrame(`${location.origin}${STATS_PATH}${encodeURIComponent(term)}`, '报名统计数据');
+    let finalStatus = '人数查询完成';
+    try {
+      setPanel(`人数 0/${codes.length}…`);
+      if (!await waitFor(() => findStatsDoc(frame.contentWindow))) throw new Error('统计页未加载');
+
+      let done = 0;
+      let updatedAt = '';
+      for (const code of codes) {
+        try {
+          const result = await queryCode(frame, code);
+          cacheStats(code, { sections: result.sections, empty: result.empty });
+          updatedAt ||= result.updatedAt;
+        } catch (error) {
+          cacheStats(code, { error: error.message, sections: new Map() });
+        }
+        done += 1;
+        setPanel(`人数 ${done}/${codes.length}…`);
+        invalidateTimetable(doc);
+        if (state.timetableOpen) renderTimetable(doc);
       }
-      done += 1;
-      invalidateTimetable(doc);
-      if (state.timetableOpen) renderTimetable(doc);
-      setPanel(`人数 ${done}/${codes.length}…`, true);
+      finalStatus = updatedAt ? `统计至 ${updatedAt}` : '人数查询完成';
+    } catch (error) {
+      finalStatus = `人数查询失败：${error.message}`;
+    } finally {
+      frame.remove();
+      state.loading = false;
+      setPanel(finalStatus);
     }
-    state.loading = false;
-    setPanel(updatedAt ? `统计至 ${updatedAt}` : '人数查询完成', false);
   }
 
   function colorFor(text) {
@@ -611,6 +812,7 @@
 
   function cardHtml(course, occurrence) {
     const count = countInfo(course);
+    const recommendation = recommendationInfo(course);
     const disabled = course.unavailable || course.conflict ? 'disabled' : '';
     const status = course.enrolled ? '已选定' : course.conflict ? '与已选定课程时间冲突' : '';
     const title = [status, course.schedule, course.note, count.detail, count.rule].filter(Boolean).join('\n');
@@ -625,6 +827,7 @@
       ${course.conflict ? '<div class="tm-meta tm-conflict-note">与已选定课程冲突，不可选</div>' : ''}
       <div class="tm-meta">${escapeHtml(course.credits)}学分 · <span class="tm-count tm-count-${count.level}">${escapeHtml(count.text)}</span></div>
       <div class="tm-meta tm-wish-line">${count.detailHtml || escapeHtml(count.detail)}</div>
+      ${recommendation ? `<div class="tm-meta tm-recommendation" title="${escapeHtml(recommendation.detail)}">${escapeHtml(recommendation.text)}</div>` : ''}
     </div>`;
   }
 
@@ -669,7 +872,8 @@
     const courses = timetableCourses(doc);
     const signature = courses.map(course => {
       const info = countInfo(course);
-      return `${course.key}-${course.schedule}-${course.note}-${course.selected}-${course.enrolled}-${course.conflict}-${course.wishSelect?.value}-${info.text}-${info.detail}`;
+      const recommendation = recommendationInfo(course);
+      return `${course.key}-${course.schedule}-${course.note}-${course.selected}-${course.enrolled}-${course.conflict}-${course.wishSelect?.value}-${info.text}-${info.detail}-${recommendation?.text || ''}`;
     }).join('|') + `|${modal.querySelector('[data-filter]')?.value}|${modal.querySelector('[data-restricted]')?.checked}|${modal.querySelector('[data-alternatives]')?.checked}`;
     if (modal.dataset.signature === signature) return;
     modal.dataset.signature = signature;
@@ -760,11 +964,11 @@
     modal = doc.createElement('div');
     modal.id = 'tm-timetable';
     modal.innerHTML = `<div class="tm-tt-head">
-      <strong>选课方案课程表</strong><span data-count></span><span data-status></span><span data-selection></span>
+      <strong>选课方案课程表</strong><span data-count></span><span data-status></span><span data-recommendation-status></span><span data-selection></span>
       <input data-filter type="search" placeholder="筛课程/教师/课程号">
       <label><input data-alternatives type="checkbox"> 显示同课备选</label>
       <label><input data-restricted type="checkbox"> 显示不可选/深圳班</label>
-      <button data-refresh type="button">刷新人数</button><button data-clear type="button">清空勾选</button><button data-submit type="button">提交所选</button><button data-close type="button">关闭</button>
+      <button data-refresh type="button">刷新数据</button><button data-clear type="button">清空勾选</button><button data-submit type="button">提交所选</button><button data-close type="button">关闭</button>
     </div><div class="tm-tt-body" data-grid></div>`;
     doc.body.appendChild(modal);
     modal.querySelector('[data-filter]').value = state.filter;
@@ -776,11 +980,12 @@
       rememberTimetableOpen(false);
     });
     modal.querySelector('[data-filter]').addEventListener('input', event => { state.filter = clean(event.target.value); invalidateTimetable(doc); renderTimetable(doc); });
-    modal.querySelector('[data-restricted]').addEventListener('change', event => { state.showRestricted = event.target.checked; invalidateTimetable(doc); renderTimetable(doc); });
-    modal.querySelector('[data-alternatives]').addEventListener('change', event => { state.showAlternatives = event.target.checked; invalidateTimetable(doc); renderTimetable(doc); });
+    modal.querySelector('[data-restricted]').addEventListener('change', event => { state.showRestricted = event.target.checked; invalidateTimetable(doc); renderTimetable(doc); refreshRecommendations(doc, timetableCourses(doc)); });
+    modal.querySelector('[data-alternatives]').addEventListener('change', event => { state.showAlternatives = event.target.checked; invalidateTimetable(doc); renderTimetable(doc); refreshRecommendations(doc, timetableCourses(doc)); });
     modal.querySelector('[data-refresh]').addEventListener('click', () => {
-      if (state.loading) return;
+      if (state.loading || state.loadingRecommendations) return;
       state.cache.clear();
+      state.recommendationCache.clear();
       scan(doc);
     });
     modal.querySelector('[data-clear]').addEventListener('click', () => clearPlannedSelection(doc));
@@ -791,7 +996,8 @@
       if (event.target.matches('[data-pick]')) setCourseChecked(doc, card.dataset.key, event.target.checked);
       if (event.target.matches('[data-wish]')) setCourseWish(doc, card.dataset.key, event.target.value);
     });
-    setPanel(state.countStatus, state.loading);
+    setPanel(state.countStatus);
+    setRecommendationPanel(state.recommendationStatus);
     return modal;
   }
 
@@ -809,15 +1015,13 @@
     if (state.timetableOpen) openTimetable(doc);
     const missing = [...new Set(courses.map(course => course.code))].filter(code => !state.cache.has(code));
     if (missing.length && !state.loading) refreshCounts(doc, missing);
+    if (!state.loadingRecommendations) refreshRecommendations(doc, timetableCourses(doc));
   }
 
   function attach(doc) {
     if (state.selectionDoc === doc && doc.getElementById('tm-helper-panel')) return;
     state.observer?.disconnect();
-    state.statsFrame?.remove();
     state.selectionDoc = doc;
-    state.statsFrame = null;
-    state.term = null;
     prepareCacheTerm(getTerm(doc));
     injectStyle(doc);
 
@@ -841,7 +1045,7 @@
 
   if (window.__THU_COURSE_HELPER_TEST__) {
     Object.assign(window.__THU_COURSE_HELPER_TEST__, {
-      sessionPingUrl, sessionExpired, rememberTimetableOpen, enrolledDocReady, extractCourseRows, extractEnrolledRows, mergeCourseRows, prepareCacheTerm, cacheStats, getRecord, parseSchedule, weeksOverlap, markConflicts, parseStatsTable, statsResponseSignature, mergeStatsResults, nextStatsPage, collectStatsPages, wishBreakdown, wishProbabilities, setCourseChecked, setCourseWish,
+      sessionPingUrl, sessionExpired, rememberTimetableOpen, enrolledDocReady, extractCourseRows, extractEnrolledRows, mergeCourseRows, prepareCacheTerm, cacheStats, getRecord, parseSchedule, weeksOverlap, markConflicts, parseStatsTable, statsResponseSignature, mergeStatsResults, nextStatsPage, collectStatsPages, wishBreakdown, wishProbabilities, parseRecommendationTable, recommendationMetrics, recommendationInfo, setCourseChecked, setCourseWish,
     });
     return;
   }
